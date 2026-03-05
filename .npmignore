@@ -1,0 +1,25 @@
+# Source (dist/ is what gets published)
+src/
+tsconfig.json
+
+# Tests
+tests/
+src/tests/
+
+# Development
+.vscode/
+.github/
+.git/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+
+# Results from test runs
+results/
+
+# Logs
+*.log

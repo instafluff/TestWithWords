@@ -3,9 +3,11 @@
 
 # TestWithWords
 
+UI Automation and Testing Using Words
+
 **Write tests in words. The AI runs them in the browser.**
 
-TestWithWords is an AI-powered UI testing tool. You describe test scenarios in plain English, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
+TestWithWords is an AI-powered UI automation and testing tool. You describe test scenarios in plain English, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
 
 🌐 **[testwithwords.com](https://testwithwords.com)**
 
@@ -74,7 +76,7 @@ The `.tww` file is both the test and its documentation. When the UI changes, the
 | [Configuration](docs/CONFIG.md) | `.twwrc.json` settings reference |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Real error messages → real fixes |
 
-Full docs and examples at **[testwithwords.com](https://testwithwords.com)**
+Full docs and examples at **[testwithwords.com](https://www.testwithwords.com)**
 
 ## How It Works
 
@@ -87,12 +89,12 @@ Full docs and examples at **[testwithwords.com](https://testwithwords.com)**
 
 You write plain English. The parser structures it into suites. The AI agent observes the page via accessibility tree, decides the next action, executes it with Playwright, and repeats until every step passes or fails. Screenshots are captured at every step for *your* review, and results land in a beautiful HTML report.
 
-## Community
+## Instafluff
 
-TestWithWords is built by [Instafluff](https://twitch.tv/instafluff) and the community.
+TestWithWords is built by [Instafluff](https://twitch.tv/instafluff).
 
 - [Become a sponsor](https://github.com/sponsors/instafluff)
-- [Watch development live on Twitch](https://twitch.tv/instafluff)
+- [Follow me on Twitch](https://twitch.tv/instafluff)
 
 ## License
 
