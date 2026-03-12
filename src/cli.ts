@@ -5,6 +5,7 @@
 //        tww run tests/
 
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
 import chalk from 'chalk';
 import * as readline from 'readline';
 import { stat } from 'fs/promises';
@@ -31,12 +32,15 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+
 const program = new Command();
 
 program
   .name('tww')
   .description('TestWithWords — AI-powered UI testing in words')
-  .version('0.1.2')
+  .version(pkg.version, '-v, --version')
   .addHelpText('after', `
 
 Start here:
@@ -141,13 +145,13 @@ program
   .description('Run a test scenario described in natural language')
   .argument('<target>', 'A .tww file, directory of .tww files, or inline test scenario')
   .option('-u, --url <url>', 'Starting URL to navigate to before testing')
-  .option('--attach [port]', 'Reuse your Chrome/Edge session for login-required apps (SSO, cookies, saved sessions). Optional port, default 9222.')
+  .option('-a, --attach [port]', 'Reuse your Chrome/Edge session for login-required apps (SSO, cookies, saved sessions). Optional port, default 9222.')
   .option('-b, --browser <name>', 'Browser: chromium, firefox, webkit (standalone) or chrome, edge (attach-only)')
   .option('--headless', 'Run in headless mode (no visible browser window)')
   .option('-m, --model <model>', 'LLM model to use')
   .option('-s, --max-steps <steps>', 'Maximum number of steps')
   .option('--no-screenshots', 'Disable automatic screenshots')
-  .option('-v, --verbose', 'Show step-by-step output for each test')
+  .option('--verbose', 'Show step-by-step output for each test')
   .option('-r, --retries <n>', 'Retry failed tests n times')
   .option('-t, --timeout <ms>', 'Per-test timeout in ms')
   .option('-o, --output <dir>', 'Screenshot output directory')
@@ -472,7 +476,7 @@ program
   .command('interactive')
   .alias('i')
   .description('Interactive mode — type test scenarios and run them one by one')
-  .option('--attach [port]', 'Attach to your running browser via CDP (default port 9222)')
+  .option('-a, --attach [port]', 'Attach to your running browser via CDP (default port 9222)')
   .option('-b, --browser <name>', 'Browser: chromium, firefox, webkit (standalone) or chrome, edge (attach-only)')
   .option('--headless', 'Run in headless mode')
   .option('-m, --model <model>', 'LLM model to use')
