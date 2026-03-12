@@ -1,0 +1,5 @@
+# Smallest possible TestWithWords example: open a real site and verify something visible.
+url https://www.wikipedia.org
+
+test "Wikipedia homepage loads"
+  Verify the page shows "Wikipedia"

@@ -1,0 +1,20 @@
+# Hooks demo: before each creates shared setup, after each cleans up, and both tests reuse that flow.
+url https://the-internet.herokuapp.com/add_remove_elements/
+
+describe "Add and remove elements"
+  # This runs before every test so each one starts with a button already added.
+  before each
+    Click the "Add Element" button
+    Verify the "Delete" button is visible
+
+  # This runs after every test so the page is cleaned up for the next test.
+  after each
+    Click every visible "Delete" button
+    Verify the "Delete" button is no longer visible
+
+  test "shows one removable element"
+    Verify the page shows one "Delete" button
+
+  test "can create a second removable element"
+    Click the "Add Element" button again
+    Verify the page shows two "Delete" buttons

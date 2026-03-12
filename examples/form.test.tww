@@ -1,0 +1,14 @@
+# Form example: fill out a public demo form on httpbin and verify the submitted values.
+url https://httpbin.org/forms/post
+
+describe "Demo form submission"
+  test "fills and submits the form"
+    Type "Taylor Tester" into the customer name field
+    Type "555-0100" into the telephone field
+    Type "taylor@testwithwords.com" into the email field
+    Select "medium" for the size field
+    Check the bacon checkbox
+    Type "Testing the TestWithWords form example." into the comments field
+    Click the Submit button
+    Verify the page shows "Taylor Tester"
+    Verify the page shows "Testing the TestWithWords form example."

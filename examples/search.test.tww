@@ -1,0 +1,9 @@
+# Search example: use Wikipedia's search box, open a real article, and verify the result.
+url https://www.wikipedia.org
+
+describe "Wikipedia search"
+  test "searches for Playwright"
+    Type "Playwright" into the search field
+    Press Enter
+    Verify the page heading includes "Playwright"
+    Verify the page shows content about browser automation

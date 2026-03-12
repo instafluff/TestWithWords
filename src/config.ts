@@ -3,17 +3,22 @@
 
 import { readFile } from 'fs/promises';
 import { resolve, join } from 'path';
+import type { ProviderType } from './auth.js';
+import type { BrowserType } from './browser.js';
 
 const CONFIG_FILENAME = '.twwrc.json';
+const PROJECT_CONFIG_PROVIDERS: ProviderType[] = ['github', 'azure', 'openai', 'custom'];
+const PROJECT_CONFIG_BROWSERS: BrowserType[] = ['chromium', 'firefox', 'webkit', 'chrome', 'edge'];
 
 /** Shape of the .twwrc.json config file */
 export interface ProjectConfig {
+  provider?: ProviderType;
   model?: string;
   timeout?: number;
   retries?: number;
   output?: string;
   port?: number;
-  browser?: 'edge' | 'chrome';
+  browser?: BrowserType;
   screenshotEveryStep?: boolean;
   maxSteps?: number;
   showTokenUsage?: boolean;
@@ -66,6 +71,13 @@ async function findConfigFile(): Promise<string | null> {
 function validateConfig(raw: Record<string, unknown>, path: string): ProjectConfig {
   const config: ProjectConfig = {};
 
+  if (raw.provider !== undefined) {
+    if (typeof raw.provider !== 'string' || !PROJECT_CONFIG_PROVIDERS.includes(raw.provider as ProviderType)) {
+      throw new Error(`${path}: "provider" must be one of ${PROJECT_CONFIG_PROVIDERS.join(', ')}`);
+    }
+    config.provider = raw.provider as ProviderType;
+  }
+
   if (raw.model !== undefined) {
     if (typeof raw.model !== 'string') throw new Error(`${path}: "model" must be a string`);
     config.model = raw.model;
@@ -92,8 +104,10 @@ function validateConfig(raw: Record<string, unknown>, path: string): ProjectConf
   }
 
   if (raw.browser !== undefined) {
-    if (raw.browser !== 'edge' && raw.browser !== 'chrome') throw new Error(`${path}: "browser" must be "edge" or "chrome"`);
-    config.browser = raw.browser;
+    if (typeof raw.browser !== 'string' || !PROJECT_CONFIG_BROWSERS.includes(raw.browser as BrowserType)) {
+      throw new Error(`${path}: "browser" must be one of ${PROJECT_CONFIG_BROWSERS.join(', ')}`);
+    }
+    config.browser = raw.browser as BrowserType;
   }
 
   if (raw.screenshotEveryStep !== undefined) {
@@ -122,12 +136,8 @@ function validateConfig(raw: Record<string, unknown>, path: string): ProjectConf
 /** Generate a default .twwrc.json content */
 export function generateDefaultConfig(): string {
   const config: ProjectConfig = {
-    model: 'gpt-4o-mini',
-    timeout: 60000,
-    retries: 0,
-    output: './results',
-    screenshotEveryStep: true,
-    maxSteps: 25,
+    provider: 'github',
+    browser: 'chromium',
   };
   return JSON.stringify(config, null, 2) + '\n';
 }

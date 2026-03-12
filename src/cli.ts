@@ -19,7 +19,8 @@ import { startDeviceFlow, openBrowser } from './device-flow.js';
 import { DEFAULT_CONFIG, type TestConfig } from './types.js';
 import { findTWWFiles, runSuite, type RunnerConfig } from './runner.js';
 import { parseTWWFile } from './parser.js';
-import { loadProjectConfig, generateDefaultConfig } from './config.js';
+import { loadProjectConfig } from './config.js';
+import { runInit } from './init.js';
 import { maybeShowSponsorMessage } from './sponsor.js';
 
 /** Check if a path is a directory */
@@ -187,7 +188,7 @@ Examples:
 
       // 3. Connect to browser
       let connection: BrowserConnection;
-      const browserOpt = opts.browser?.toLowerCase();
+      const browserOpt = (opts.browser ?? projectConfig.browser)?.toLowerCase();
 
       // Validate --browser value if provided
       if (browserOpt && !VALID_BROWSERS.includes(browserOpt as any)) {
@@ -498,7 +499,7 @@ Examples:
 
       // 2. Connect to browser
       let connection: BrowserConnection;
-      const browserOpt = opts.browser?.toLowerCase();
+      const browserOpt = (opts.browser ?? projectConfig.browser)?.toLowerCase();
 
       // Validate --browser value if provided
       if (browserOpt && !VALID_BROWSERS.includes(browserOpt as any)) {
@@ -1130,25 +1131,8 @@ Checks:
 
 program
   .command('init')
-  .description('Create a .twwrc.json config file with defaults')
-  .action(async () => {
-    const { writeFile } = await import('fs/promises');
-    const { existsSync } = await import('fs');
-    const configPath = '.twwrc.json';
-
-    if (existsSync(configPath)) {
-      console.log('');
-      console.log(chalk.yellow('  ⚠ ') + '.twwrc.json already exists. Delete it first to regenerate.');
-      console.log('');
-      return;
-    }
-
-    await writeFile(configPath, generateDefaultConfig(), 'utf-8');
-    console.log('');
-    console.log(chalk.green('  ✓ ') + 'Created .twwrc.json with default settings');
-    console.log(chalk.dim('    Edit the file to customize model, timeout, retries, etc.'));
-    console.log('');
-  });
+  .description('Scaffold a starter TestWithWords project')
+  .action(runInit);
 
 // Default: show help
 program.parse();

@@ -1,0 +1,21 @@
+# Full suite example: shared setup, reusable flow import, nested describes, and multiple realistic tests.
+url https://the-internet.herokuapp.com/login
+
+describe "The Internet demo app"
+  before each
+    # Reuse the shared login flow before every test in this suite.
+    use "flows/login-example.tww"
+
+  test "lands on the secure area after login"
+    Verify the page heading says "Secure Area"
+    Verify the page shows "You logged into a secure area!"
+
+  test "can log out again"
+    Click the Logout button
+    Verify the page heading says "Login Page"
+    Verify the page shows "You logged out of the secure area!"
+
+  describe "secure area"
+    test "shows the success banner and logout control"
+      Verify the page shows "You logged into a secure area!"
+      Verify the Logout button is visible

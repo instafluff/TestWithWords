@@ -1,0 +1,6 @@
+# Reusable login flow for the public The Internet demo app.
+# This is a template users can adapt for their own app, selectors, and credentials.
+Type "tomsmith" into the username field
+Type "SuperSecretPassword!" into the password field
+Click the Login button
+Verify the page shows "You logged into a secure area!"

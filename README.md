@@ -3,13 +3,18 @@
 
 # TestWithWords
 
-UI Automation and Testing Using Words
-
 **Write tests in words. The AI runs them in the browser.**
 
-TestWithWords is an AI-powered UI automation and testing tool. You describe test scenarios in words, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
+Turn plain-English test ideas into real browser runs, real screenshots, and real confidence.
 
-🌐 **[www.testwithwords.com](https://www.testwithwords.com)**
+🌐 **[testwithwords.com](https://testwithwords.com)**
+
+<!-- TODO: Replace with real demo GIF -->
+> 🎬 *Demo coming soon — imagine watching an AI drive your browser from just words!*
+
+TestWithWords is an AI-powered UI testing tool that feels a little bit like magic the first time you use it.
+You describe what should happen. The AI opens a real browser, clicks around, fills things in, verifies results, and gives you a report with screenshots.
+No brittle selectors. No giant Playwright file. No "welp, the button moved so the whole suite exploded."
 
 ## Quick Start
 
@@ -19,7 +24,9 @@ tww auth
 tww run "Go to www.testwithwords.com and verify the heading says Write tests in words"
 ```
 
-Three commands, under two minutes.
+That's the whole hello-world.
+
+Then peek inside the packaged `examples/` folder and try files like `examples/basic.test.tww`, `examples/form.test.tww`, and `examples/full-suite.test.tww`.
 
 ## See It In Action
 
@@ -55,37 +62,32 @@ $ tww run cart.test.tww
  📄 Report: results/report.html
 ```
 
-The `.tww` file is both the test and its documentation. When the UI changes, the tests still work — the AI adapts to the new layout.
+That little `.tww` file is the test and the documentation.
+When the UI shifts around, the AI adapts to the page instead of hard-crashing on a stale selector.
 
-## Why TestWithWords?
+## Why You'll Love This
 
-- **Natural language tests** — if you can describe it, you can test it
-- **No selectors to maintain** — the AI finds elements by understanding the page, not by fragile CSS paths
-- **Resilient to UI changes** — when layouts change, the AI adapts instead of breaking
-- **Screenshot evidence** — every step is captured for review and reporting
-- **Free to start** — works with [GitHub Models](https://github.com/marketplace/models) out of the box
-- **Any browser** — Chromium, Firefox, WebKit, or attach to your own Chrome/Edge with sessions intact
+- **You can start fast** — if you can describe the test, you can run the test.
+- **You stop babysitting selectors** — the AI finds things by understanding the page, not by clinging to fragile CSS paths.
+- **You get evidence, not vibes** — every run gives you screenshots and an HTML report.
+- **You can use what already works** — GitHub Models gets you started for free, and other OpenAI-compatible providers work too.
+- **You can test real flows** — forms, navigation, dashboards, internal tools, and multi-step browser tasks.
+- **You can explore instead of guessing** — the package ships with `examples/` so you can open a file and instantly see the format.
 
 ## Documentation
 
 | Doc | What's inside |
 |-----|--------------|
+| [Website](https://testwithwords.com) | Overview, positioning, and launch-ready landing page |
 | [Getting Started Guide](docs/GUIDE.md) | Full walkthrough from install to first passing test |
 | [CLI Reference](docs/CLI.md) | Every command and flag with examples |
 | [.tww File Format](docs/TWW-FORMAT.md) | How to write test files — `describe`, `test`, hooks, reusable flows |
 | [Configuration](docs/CONFIG.md) | `.twwrc.json` settings reference |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Real error messages → real fixes |
+| [Examples](examples/) | Runnable `.tww` files you can copy, tweak, and learn from |
 
-Full docs and examples at **[testwithwords.com](https://www.testwithwords.com)**
-
-Useful utilities:
-- `tww models` — see what models your current provider exposes
-- `tww doctor` — check auth, model, browser, and attach-mode readiness
-
-Monetization path already in motion:
-- `tww run` now shows a small sponsor reminder after each successful run
-- hide it per-run with `--no-sponsor`
-- hide it per-project with `"showSponsorMessage": false` in `.twwrc.json`
+If you want the quick overview, start at **[testwithwords.com](https://testwithwords.com)**.
+If you want the deeper stuff, the docs are all here in the repo.
 
 ## How It Works
 
@@ -96,14 +98,24 @@ Monetization path already in motion:
                         (GitHub / OpenAI / Azure)
 ```
 
-You write words. The parser structures it into suites. The AI agent observes the page via accessibility tree, decides the next action, executes it with Playwright, and repeats until every step passes or fails. Screenshots are captured at every step for *your* review, and results land in a beautiful HTML report.
+You write words.
+The parser turns them into test suites.
+The AI watches the page, decides the next action, uses Playwright to do it, and keeps going until the test passes or fails.
+Then you get a clean CLI summary plus a visual HTML report with screenshots.
 
 ## Instafluff
 
-TestWithWords is built by [Instafluff](https://twitch.tv/instafluff).
+TestWithWords is built by [Instafluff](https://twitch.tv/instafluff), the same human behind [ComfyJS](https://github.com/instafluff/ComfyJS).
 
-- [Become a sponsor](https://github.com/sponsors/instafluff)
-- [Follow me on Twitch](https://twitch.tv/instafluff)
+> ComfyJS has been free for years and still gets about 3.4 million requests a year on jsDelivr.
+>
+> TestWithWords is the next one: a tool built to make something intimidating feel friendly, powerful, and SUPER EASILY usable.
+>
+> If that kind of open source makes your day better, the best way to help is to sponsor the work.
+
+> [Become a sponsor](https://github.com/sponsors/instafluff)
+>
+> [Come hang out on Twitch](https://twitch.tv/instafluff)
 
 ## License
 

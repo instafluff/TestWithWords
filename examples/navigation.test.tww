@@ -1,0 +1,10 @@
+# Navigation example: move through multiple real Wikipedia pages and verify each stop.
+url https://en.wikipedia.org/wiki/Software_testing
+
+describe "Wikipedia navigation"
+  test "follows links across related topics"
+    Verify the page heading says "Software testing"
+    Click the "Test automation" link
+    Verify the page heading says "Test automation"
+    Click the "Continuous testing" link
+    Verify the page heading says "Continuous testing"
