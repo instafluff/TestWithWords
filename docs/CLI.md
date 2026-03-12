@@ -187,6 +187,7 @@ tww run <target> [options]
 | `--timeout <ms>` | `-t` | `60000` | Per-test timeout in milliseconds |
 | `--output <dir>` | `-o` | `./results` | Where screenshots and reports go |
 | `--no-tokens` | — | — | Hide token usage from output and reports |
+| `--no-sponsor` | — | — | Hide the occasional sponsor reminder after successful runs |
 
 #### Browser names
 
@@ -253,6 +254,14 @@ tww run tests/ -v
 ```bash
 tww run tests/ --headless --no-tokens
 ```
+
+#### Sponsor reminder
+
+To support the open-source CLI without gating features, TWW shows a short sponsor reminder after each successful `tww run`.
+
+- disable it for one run with `--no-sponsor`
+- disable it for a project with `"showSponsorMessage": false` in `.twwrc.json`
+- it does not appear for failed runs, `tww auth`, `tww init`, or `tww interactive`
 
 ---
 

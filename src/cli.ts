@@ -19,6 +19,7 @@ import { DEFAULT_CONFIG, type TestConfig } from './types.js';
 import { findTWWFiles, runSuite, type RunnerConfig } from './runner.js';
 import { parseTWWFile } from './parser.js';
 import { loadProjectConfig, generateDefaultConfig } from './config.js';
+import { maybeShowSponsorMessage } from './sponsor.js';
 
 /** Check if a path is a directory */
 async function isDirectory(path: string): Promise<boolean> {
@@ -35,7 +36,7 @@ const program = new Command();
 program
   .name('tww')
   .description('TestWithWords — AI-powered UI testing in plain English')
-  .version('0.1.0')
+  .version('0.1.1')
   .addHelpText('after', `
 
 Start here:
@@ -151,6 +152,7 @@ program
   .option('-t, --timeout <ms>', 'Per-test timeout in ms')
   .option('-o, --output <dir>', 'Screenshot output directory')
   .option('--no-tokens', 'Hide token usage from output and reports')
+  .option('--no-sponsor', 'Hide the occasional sponsor reminder after successful runs')
   .addHelpText('after', `
 
 Examples:
@@ -177,6 +179,7 @@ Examples:
       const retries = parseOptionalInt(opts.retries) ?? projectConfig.retries ?? 0;
       const testTimeout = parseOptionalInt(opts.timeout) ?? projectConfig.timeout ?? 60000;
       const headless = opts.headless || false;
+      const showSponsorMessage = opts.sponsor !== false && projectConfig.showSponsorMessage !== false;
 
       // 3. Connect to browser
       let connection: BrowserConnection;
@@ -337,8 +340,12 @@ Examples:
         console.log(chalk.dim(`  📄 Report: ${reportPath}`));
         console.log('');
 
-        await connection.close();
         const anyFail = suiteResults.some(s => s.failed > 0 || s.errors > 0);
+        if (!anyFail) {
+          await maybeShowSponsorMessage(showSponsorMessage);
+        }
+
+        await connection.close();
         process.exit(anyFail ? 1 : 0);
 
       } else {
@@ -365,6 +372,10 @@ Examples:
           const reportPath = await generateReport(result);
           console.log(chalk.dim(`  📄 Report: ${reportPath}`));
           console.log('');
+        }
+
+        if (result.result === 'pass') {
+          await maybeShowSponsorMessage(showSponsorMessage);
         }
 
         await connection.close();

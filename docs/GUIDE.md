@@ -34,7 +34,7 @@ Verify it worked:
 
 ```bash
 tww --version
-# 0.1.0
+# 0.1.1
 ```
 
 > **What this did:** Installed the TestWithWords CLI (`tww`) and a bundled Chromium browser. No Docker, no additional config needed.
@@ -131,7 +131,7 @@ tww run first.test.tww
 Output:
 
 ```
-  🧪 TestWithWords v0.1.0
+  🧪 TestWithWords v0.1.1
   Chromium (standalone) · LLM: GitHub Models
 
  PASS  first.test.tww
@@ -146,6 +146,8 @@ Output:
 A Chromium window opens, navigates to `example.com`, reads the page, checks your expectations, and reports back.
 
 > **What this did:** TestWithWords parsed your `.tww` file, launched a browser, and sent each step to the AI. The AI read the page's accessibility tree, determined the right action, executed it via Playwright, and verified the result. Screenshots were captured at every step — open the HTML report for a visual walkthrough.
+
+After successful `tww run` commands, TWW also shows a small sponsor reminder to support the open-source project. If you want clean logs for CI or demos, use `--no-sponsor` or set `"showSponsorMessage": false` in `.twwrc.json`.
 
 ---
 

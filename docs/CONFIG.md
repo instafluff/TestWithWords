@@ -44,6 +44,7 @@ You can also create one by hand — it's just JSON.
 | `screenshotEveryStep` | `boolean` | `true` | Capture a screenshot after every AI action. Turn off to save disk space. |
 | `maxSteps` | `number` | `25` | Max AI actions per test. Prevents the AI from looping forever. |
 | `showTokenUsage` | `boolean` | `true` | Show LLM token usage in terminal and HTML reports. |
+| `showSponsorMessage` | `boolean` | `true` | Show the small GitHub Sponsors reminder after successful `tww run` commands. |
 
 ---
 
@@ -120,11 +121,12 @@ This is the default — fast model, reasonable timeout, screenshots enabled.
   "output": "./test-results",
   "screenshotEveryStep": true,
   "maxSteps": 30,
-  "showTokenUsage": false
+  "showTokenUsage": false,
+  "showSponsorMessage": false
 }
 ```
 
-Longer timeout for CI machines, one retry for flaky network conditions, token output hidden to keep logs clean.
+Longer timeout for CI machines, one retry for flaky network conditions, token output hidden to keep logs clean, sponsor reminder disabled for non-interactive logs.
 
 ### Corporate intranet (via Edge + attach mode)
 
@@ -168,7 +170,8 @@ Stronger model for complex multi-step scenarios, generous timeout and step limit
   "output": "./results",
   "screenshotEveryStep": false,
   "maxSteps": 15,
-  "showTokenUsage": false
+  "showTokenUsage": false,
+  "showSponsorMessage": false
 }
 ```
 

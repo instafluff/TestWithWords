@@ -31,7 +31,7 @@
 | ID | Scenario | Command | Expected | Priority | Status |
 |----|----------|---------|----------|----------|--------|
 | T-001 | Show top-level help | `tww --help` | Lists commands: run, interactive, auth, launch, init. Shows version. | P0 | ✅ 2026-03-04 |
-| T-002 | Show version | `tww --version` | Prints `0.1.0` | P1 | |
+| T-002 | Show version | `tww --version` | Prints `0.1.1` | P1 | |
 | T-003 | No command shows help | `tww` | Shows help text (default behavior) | P1 | |
 | T-004 | Unknown command | `tww foobar` | Shows error + help | P1 | |
 

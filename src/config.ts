@@ -17,6 +17,7 @@ export interface ProjectConfig {
   screenshotEveryStep?: boolean;
   maxSteps?: number;
   showTokenUsage?: boolean;
+  showSponsorMessage?: boolean;
 }
 
 /**
@@ -108,6 +109,11 @@ function validateConfig(raw: Record<string, unknown>, path: string): ProjectConf
   if (raw.showTokenUsage !== undefined) {
     if (typeof raw.showTokenUsage !== 'boolean') throw new Error(`${path}: "showTokenUsage" must be a boolean`);
     config.showTokenUsage = raw.showTokenUsage;
+  }
+
+  if (raw.showSponsorMessage !== undefined) {
+    if (typeof raw.showSponsorMessage !== 'boolean') throw new Error(`${path}: "showSponsorMessage" must be a boolean`);
+    config.showSponsorMessage = raw.showSponsorMessage;
   }
 
   return config;

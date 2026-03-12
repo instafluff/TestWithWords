@@ -43,7 +43,7 @@ Run it:
 ```bash
 $ tww run cart.test.tww
 
-  🧪 TestWithWords v0.1.0
+  🧪 TestWithWords v0.1.1
   Chromium (standalone) · LLM: GitHub Models
 
  PASS  cart.test.tww
@@ -81,6 +81,11 @@ Full docs and examples at **[testwithwords.com](https://www.testwithwords.com)**
 Useful utilities:
 - `tww models` — see what models your current provider exposes
 - `tww doctor` — check auth, model, browser, and attach-mode readiness
+
+Monetization path already in motion:
+- `tww run` now shows a small sponsor reminder after each successful run
+- hide it per-run with `--no-sponsor`
+- hide it per-project with `"showSponsorMessage": false` in `.twwrc.json`
 
 ## How It Works
 
