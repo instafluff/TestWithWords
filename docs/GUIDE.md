@@ -109,13 +109,13 @@ tww auth --status
 Create a file called `first.test.tww`:
 
 ```tww
-url https://example.com
+url https://www.testwithwords.com
 
-describe "Example.com"
+describe "TestWithWords Website"
 
   test "homepage loads correctly"
-    Verify the heading says "Example Domain"
-    Verify there is a link that says "More information..."
+    Verify the heading says "Write tests in words"
+    Verify there is a Get Started link
 ```
 
 That's a complete test. Words, not code. The `url` tells the AI where to go, and each line under `test` is a step for the AI to perform.
@@ -135,7 +135,7 @@ Output:
   Chromium (standalone) · LLM: GitHub Models
 
  PASS  first.test.tww
-  Example.com
+  TestWithWords Website
     ✓ homepage loads correctly (4.2s)
 
  Tests:  1 passed, 0 failed
@@ -143,7 +143,7 @@ Output:
  📄 Report: results/report.html
 ```
 
-A Chromium window opens, navigates to `example.com`, reads the page, checks your expectations, and reports back.
+A Chromium window opens, navigates to `www.testwithwords.com`, reads the page, checks your expectations, and reports back.
 
 > **What this did:** TestWithWords parsed your `.tww` file, launched a browser, and sent each step to the AI. The AI read the page's accessibility tree, determined the right action, executed it via Playwright, and verified the result. Screenshots were captured at every step — open the HTML report for a visual walkthrough.
 
@@ -158,7 +158,7 @@ After successful `tww run` commands, TWW also shows a small sponsor reminder to 
 Don't want to create a file? Just pass your test scenario directly:
 
 ```bash
-tww run "Go to https://example.com and verify the heading says Example Domain" --url https://example.com
+tww run "Go to www.testwithwords.com and verify the heading says Write tests in words"
 ```
 
 Perfect for one-off checks or when you're just experimenting.
@@ -177,10 +177,10 @@ tww interactive
   ✓ Connected to Chromium (standalone)
 
   Type a test scenario and press Enter to run it.
-  Start with a URL: "url:https://example.com" to navigate first.
+  Start with a URL: "url:https://www.testwithwords.com" to navigate first.
   Type "quit" or "exit" to stop.
 
-  ▶ url:https://example.com Verify the heading says "Example Domain"
+  ▶ url:https://www.testwithwords.com Verify the heading says "Write tests in words"
 ```
 
 The `url:` prefix navigates to a page first, then runs your scenario.

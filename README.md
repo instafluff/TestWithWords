@@ -9,14 +9,14 @@ UI Automation and Testing Using Words
 
 TestWithWords is an AI-powered UI automation and testing tool. You describe test scenarios in words, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
 
-🌐 **[testwithwords.com](https://testwithwords.com)**
+🌐 **[www.testwithwords.com](https://www.testwithwords.com)**
 
 ## Quick Start
 
 ```bash
 npm i -g testwithwords
 tww auth
-tww run "Go to https://example.com and verify the heading says Example Domain"
+tww run "Go to www.testwithwords.com and verify the heading says Write tests in words"
 ```
 
 Three commands, under two minutes.
