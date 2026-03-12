@@ -13,7 +13,7 @@ import { initLLMFromConfig, getProviderName } from './llm.js';
 import { runTest } from './agent.js';
 import { createReporter, createCompactReporter, printBanner, printSuiteHeader, printGroupResults, printSummary } from './reporter.js';
 import { generateReport, generateSuiteReport } from './report.js';
-import { resolveAuth, saveConfig, clearConfig, loadConfig, getConfigPath, tryAutoDetectGitHub, PROVIDERS, GITHUB_MODELS, fetchAvailableModels, type AuthConfig, type ProviderType } from './auth.js';
+import { resolveAuth, saveConfig, clearConfig, loadConfig, getConfigPath, tryAutoDetectGitHub, PROVIDERS, GITHUB_MODELS, fetchAvailableModels, getCompatibleChatModels, validateAuthConfig, type AuthConfig, type ProviderType } from './auth.js';
 import { startDeviceFlow, openBrowser } from './device-flow.js';
 import { DEFAULT_CONFIG, type TestConfig } from './types.js';
 import { findTWWFiles, runSuite, type RunnerConfig } from './runner.js';
@@ -35,25 +35,104 @@ const program = new Command();
 program
   .name('tww')
   .description('TestWithWords — AI-powered UI testing in plain English')
-  .version('0.1.0');
+  .version('0.1.0')
+  .addHelpText('after', `
+
+Start here:
+  tww auth
+  tww run "Go to https://example.com and verify the page loads"
+  tww run tests/
+  tww launch --browser edge
+
+Common workflows:
+  Local browser:  tww run smoke.test.tww
+  Reuse login:    tww launch --browser edge   then   tww run tests/ --attach --browser edge
+  Check auth:     tww auth --status
+`);
 
 /**
  * Initialize LLM from resolved auth. Exits with helpful message if not configured.
  */
-async function ensureLLM(): Promise<void> {
+async function ensureLLM(): Promise<AuthConfig> {
   const auth = await resolveAuth();
   if (!auth) {
     console.log('');
-    console.log(chalk.red('  ✗ ') + chalk.bold('Not authenticated. Run:'));
+    console.log(chalk.red('  ✗ ') + chalk.bold('No LLM provider is configured.'));
     console.log('');
+    console.log(chalk.white('  Run:'));
     console.log(chalk.cyan('    tww auth'));
     console.log('');
+    console.log(chalk.dim('  Recommended for first run: GitHub Models (free with a GitHub account).'));
     console.log(chalk.dim('  This will guide you through connecting to GitHub Models (free),'));
     console.log(chalk.dim('  OpenAI, Azure OpenAI, or any OpenAI-compatible API.'));
+    console.log(chalk.dim('  Check current setup anytime with: tww auth --status'));
     console.log('');
     process.exit(1);
   }
   initLLMFromConfig(auth);
+  return auth;
+}
+
+function parseOptionalInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function sortGitHubModels(models: string[], preferredModel = PROVIDERS.github.defaultModel): string[] {
+  const unique = [...new Set(models)];
+  const rest = unique.filter(model => model !== preferredModel).sort((a, b) => a.localeCompare(b));
+  return unique.includes(preferredModel)
+    ? [preferredModel, ...rest]
+    : rest;
+}
+
+function getGitHubModelHint(model: string): string {
+  if (model === PROVIDERS.github.defaultModel) return 'recommended default';
+  return '';
+}
+
+function pickNumberedOrNamedModel(choice: string, availableModels: string[], defaultModel: string): string {
+  const trimmedChoice = choice.trim();
+  const asNum = Number.parseInt(trimmedChoice, 10);
+
+  if (!trimmedChoice) return defaultModel;
+  if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= availableModels.length) {
+    return availableModels[asNum - 1];
+  }
+  return trimmedChoice;
+}
+
+function printNotConfiguredAndExit(): never {
+  console.log('');
+  console.log(chalk.red('  ✗ ') + chalk.bold('No LLM provider is configured.'));
+  console.log('');
+  console.log(chalk.white('  Run:'));
+  console.log(chalk.cyan('    tww auth'));
+  console.log('');
+  process.exit(1);
+}
+
+async function getResolvedAuthOrExit(): Promise<AuthConfig> {
+  const auth = await resolveAuth();
+  if (!auth) {
+    printNotConfiguredAndExit();
+  }
+  return auth;
+}
+
+function printSection(title: string): void {
+  console.log('');
+  console.log(chalk.bold.cyan(`  ${title}`));
+  console.log(chalk.dim(`  ${'─'.repeat(title.length)}`));
+}
+
+function printCheck(ok: boolean, label: string, detail?: string): void {
+  const icon = ok ? chalk.green('  ✓ ') : chalk.red('  ✗ ');
+  console.log(icon + label);
+  if (detail) {
+    console.log(chalk.dim(`    ${detail}`));
+  }
 }
 
 program
@@ -61,32 +140,42 @@ program
   .description('Run a test scenario described in natural language')
   .argument('<target>', 'A .tww file, directory of .tww files, or inline test scenario')
   .option('-u, --url <url>', 'Starting URL to navigate to before testing')
-  .option('--attach [port]', 'Attach to your running browser via CDP (for SSO/cookies). Optional port, default 9222.')
-  .option('-b, --browser <name>', 'Browser engine: chromium, firefox, webkit (standalone) or chrome, edge (attach)')
+  .option('--attach [port]', 'Reuse your Chrome/Edge session for login-required apps (SSO, cookies, saved sessions). Optional port, default 9222.')
+  .option('-b, --browser <name>', 'Browser: chromium, firefox, webkit (standalone) or chrome, edge (attach-only)')
   .option('--headless', 'Run in headless mode (no visible browser window)')
-  .option('-m, --model <model>', 'LLM model to use', 'gpt-4o-mini')
-  .option('-s, --max-steps <steps>', 'Maximum number of steps', '25')
+  .option('-m, --model <model>', 'LLM model to use')
+  .option('-s, --max-steps <steps>', 'Maximum number of steps')
   .option('--no-screenshots', 'Disable automatic screenshots')
   .option('-v, --verbose', 'Show step-by-step output for each test')
-  .option('-r, --retries <n>', 'Retry failed tests n times', '0')
-  .option('-t, --timeout <ms>', 'Per-test timeout in ms', '60000')
-  .option('-o, --output <dir>', 'Screenshot output directory', './results')
+  .option('-r, --retries <n>', 'Retry failed tests n times')
+  .option('-t, --timeout <ms>', 'Per-test timeout in ms')
+  .option('-o, --output <dir>', 'Screenshot output directory')
   .option('--no-tokens', 'Hide token usage from output and reports')
+  .addHelpText('after', `
+
+Examples:
+  tww run smoke.test.tww
+  tww run tests/
+  tww run "Verify the homepage loads" --url https://example.com
+  tww run tests/ --attach --browser edge
+  tww launch --browser edge --port 9333
+  tww run tests/ --attach 9333 --browser edge
+`)
   .action(async (target: string, opts: any) => {
     try {
       // Load project config (CLI flags override)
       const projectConfig = await loadProjectConfig();
 
       // 1. Initialize LLM
-      await ensureLLM();
+      const auth = await ensureLLM();
 
       // 2. Resolve options: CLI > .twwrc.json > defaults
-      const model = opts.model ?? projectConfig.model ?? DEFAULT_CONFIG.model!;
-      const maxSteps = parseInt(opts.maxSteps) || projectConfig.maxSteps || DEFAULT_CONFIG.maxSteps!;
+      const model = opts.model ?? projectConfig.model ?? auth.model ?? DEFAULT_CONFIG.model!;
+      const maxSteps = parseOptionalInt(opts.maxSteps) ?? projectConfig.maxSteps ?? DEFAULT_CONFIG.maxSteps!;
       const outputDir = opts.output ?? projectConfig.output ?? DEFAULT_CONFIG.screenshotDir!;
       const screenshotEveryStep = opts.screenshots !== false && (projectConfig.screenshotEveryStep !== false);
-      const retries = parseInt(opts.retries) || projectConfig.retries || 0;
-      const testTimeout = parseInt(opts.timeout) || projectConfig.timeout || 60000;
+      const retries = parseOptionalInt(opts.retries) ?? projectConfig.retries ?? 0;
+      const testTimeout = parseOptionalInt(opts.timeout) ?? projectConfig.timeout ?? 60000;
       const headless = opts.headless || false;
 
       // 3. Connect to browser
@@ -111,6 +200,19 @@ program
         console.log('');
         console.log(chalk.dim(`  Standalone (no --attach): ${STANDALONE_BROWSERS.join(', ')}`));
         console.log(chalk.dim(`  Attach (--attach):        ${ATTACH_BROWSERS.join(', ')}`));
+        console.log('');
+        process.exit(1);
+        return;
+      }
+
+      // Reject attach-only browsers without --attach
+      if (opts.attach === undefined && browserOpt && ATTACH_BROWSERS.includes(browserOpt as AttachBrowser)) {
+        console.log('');
+        console.log(chalk.red('  ✗ ') + chalk.bold(`--browser ${browserOpt} requires --attach`));
+        console.log('');
+        console.log(chalk.dim('  Chrome and Edge are only available when reusing your existing browser session.'));
+        console.log(chalk.dim(`  Try: tww run ${target} --attach --browser ${browserOpt}`));
+        console.log(chalk.dim(`  Or use a standalone engine: ${STANDALONE_BROWSERS.join(', ')}`));
         console.log('');
         process.exit(1);
         return;
@@ -191,7 +293,7 @@ program
         // ─── .tww file mode (Jest-style output) ───
         const verbose = opts.verbose || false;
         const reporter = createCompactReporter(verbose);
-        printBanner(`${connection.label} · LLM: ${getProviderName()}`);
+        printBanner(`${connection.label} · ${getProviderName()} · ${model}`);
 
         const files = await findTWWFiles(target);
         if (files.length === 0) {
@@ -242,7 +344,7 @@ program
       } else {
         // ─── Inline scenario mode (backwards compatible with POC) ───
         const reporter = createReporter();
-        reporter.connected(`${connection.label} · LLM: ${getProviderName()}`);
+        reporter.connected(`${connection.label} · ${getProviderName()} · ${model}`);
 
         const config: TestConfig = {
           scenario: target,
@@ -282,6 +384,16 @@ program
   .description('Launch your browser (Chrome/Edge) with remote debugging enabled')
   .option('-p, --port <port>', 'Remote debugging port', '9222')
   .option('-b, --browser <browser>', 'Browser: chrome or edge (auto-detected if omitted)')
+  .addHelpText('after', `
+
+Examples:
+  tww launch --browser edge
+  tww launch --browser chrome --port 9333
+
+Then run:
+  tww run tests/ --attach --browser edge
+  tww run tests/ --attach 9333 --browser chrome
+`)
   .action(async (opts: any) => {
     const port = parseInt(opts.port);
     const browserOpt = opts.browser?.toLowerCase();
@@ -330,7 +442,8 @@ program
     try {
       await launchUserBrowser(browserType, port);
       spinner.succeed(chalk.green(`${name} running with debugging on port ${port}`));
-      console.log(chalk.dim('  You can now use --attach to connect to it.'));
+      console.log(chalk.dim('  Next: sign in in that browser if needed, then run:'));
+      console.log(chalk.cyan(`    tww run tests/ --attach ${port === 9222 ? '--browser ' + browserType : `${port} --browser ${browserType}`}`));
       console.log('');
     } catch {
       spinner.fail(chalk.red(`Could not connect to ${name}`));
@@ -349,14 +462,24 @@ program
   .alias('i')
   .description('Interactive mode — type test scenarios and run them one by one')
   .option('--attach [port]', 'Attach to your running browser via CDP (default port 9222)')
-  .option('-b, --browser <name>', 'Browser: chromium, firefox, webkit (standalone) or chrome, edge (attach)')
+  .option('-b, --browser <name>', 'Browser: chromium, firefox, webkit (standalone) or chrome, edge (attach-only)')
   .option('--headless', 'Run in headless mode')
-  .option('-m, --model <model>', 'LLM model to use', 'gpt-4o-mini')
-  .option('-o, --output <dir>', 'Screenshot output directory', './results')
+  .option('-m, --model <model>', 'LLM model to use')
+  .option('-o, --output <dir>', 'Screenshot output directory')
+  .addHelpText('after', `
+
+Examples:
+  tww interactive
+  tww interactive --attach --browser edge
+  tww interactive --attach 9333 --browser chrome
+`)
   .action(async (opts: any) => {
     try {
       // 1. Initialize LLM
-      await ensureLLM();
+      const auth = await ensureLLM();
+      const projectConfig = await loadProjectConfig();
+      const model = opts.model ?? projectConfig.model ?? auth.model ?? DEFAULT_CONFIG.model!;
+      const outputDir = opts.output ?? projectConfig.output ?? DEFAULT_CONFIG.screenshotDir!;
 
       // 2. Connect to browser
       let connection: BrowserConnection;
@@ -380,6 +503,17 @@ program
         console.log('');
         console.log(chalk.dim(`  Standalone (no --attach): ${STANDALONE_BROWSERS.join(', ')}`));
         console.log(chalk.dim(`  Attach (--attach):        ${ATTACH_BROWSERS.join(', ')}`));
+        console.log('');
+        process.exit(1);
+        return;
+      }
+
+      if (opts.attach === undefined && browserOpt && ATTACH_BROWSERS.includes(browserOpt as AttachBrowser)) {
+        console.log('');
+        console.log(chalk.red('  ✗ ') + chalk.bold(`--browser ${browserOpt} requires --attach`));
+        console.log('');
+        console.log(chalk.dim(`  Try: tww interactive --attach --browser ${browserOpt}`));
+        console.log(chalk.dim(`  Or use a standalone engine: ${STANDALONE_BROWSERS.join(', ')}`));
         console.log('');
         process.exit(1);
         return;
@@ -434,6 +568,7 @@ program
       console.log(chalk.bold.cyan('  🧪 TestWithWords — Interactive Mode'));
       console.log(chalk.dim('  ─'.repeat(25)));
       console.log(chalk.green('  ✓ ') + chalk.dim(`Connected to ${connection.label}`));
+      console.log(chalk.green('  ✓ ') + chalk.dim(`Using ${getProviderName()} · ${model}`));
       console.log('');
       console.log(chalk.dim('  Type a test scenario and press Enter to run it.'));
       console.log(chalk.dim('  Start with a URL: "url:https://example.com" to navigate first.'));
@@ -479,8 +614,8 @@ program
             startUrl,
             cdpUrl: 'interactive',
             maxSteps: 25,
-            screenshotDir: `${opts.output}/run-${runCount}`,
-            model: opts.model || 'gpt-4o-mini',
+            screenshotDir: `${outputDir}/run-${runCount}`,
+            model,
             screenshotEveryStep: true,
             actionTimeout: 10000,
             generateReport: true,
@@ -522,6 +657,16 @@ program
   .description('Set up LLM provider (GitHub Models, OpenAI, Azure, or custom)')
   .option('--status', 'Show current auth status')
   .option('--logout', 'Clear saved credentials')
+  .addHelpText('after', `
+
+Examples:
+  tww auth
+  tww auth --status
+  tww auth --logout
+
+Recommended for first run:
+  GitHub Models (free with a GitHub account)
+`)
   .action(async (opts: any) => {
     if (opts.logout) {
       await clearConfig();
@@ -560,6 +705,8 @@ program
     console.log(chalk.dim('  ─'.repeat(25)));
     console.log('');
 
+    let detectedGitHubToken: string | null = null;
+
     // Check for auto-detected GitHub token first
     const autoGH = tryAutoDetectGitHub();
     if (autoGH) {
@@ -568,35 +715,27 @@ program
       console.log('');
       const useIt = await ask(chalk.white('  Use GitHub Models? (Y/n): '));
       if (!useIt || useIt.toLowerCase() !== 'n') {
-        const config: AuthConfig = {
-          provider: 'github',
-          apiKey: autoGH,
-          baseURL: PROVIDERS.github.baseURL,
-          model: PROVIDERS.github.defaultModel,
-          displayName: 'GitHub Models',
-        };
-        await saveConfig(config);
-        console.log('');
-        console.log(chalk.green('  ✓ ') + `Saved! Using ${chalk.bold('GitHub Models')} with ${chalk.bold(config.model)}`);
-        console.log(chalk.dim(`    Config: ${getConfigPath()}`));
-        console.log('');
-        rl.close();
-        return;
+        detectedGitHubToken = autoGH;
       }
     }
 
-    // Choose provider
-    console.log(chalk.white('  Choose your LLM provider:'));
-    console.log('');
-    console.log(chalk.cyan('    1) GitHub Models') + chalk.dim(' — Free with any GitHub account'));
-    console.log(chalk.cyan('    2) OpenAI') + chalk.dim(' — Direct OpenAI API'));
-    console.log(chalk.cyan('    3) Azure OpenAI') + chalk.dim(' — Azure OpenAI Service'));
-    console.log(chalk.cyan('    4) Custom') + chalk.dim(' — Any OpenAI-compatible API (Ollama, etc.)'));
-    console.log('');
+    let provider: ProviderType;
+    if (detectedGitHubToken) {
+      provider = 'github';
+    } else {
+      console.log(chalk.white('  Choose your LLM provider:'));
+      console.log('');
+      console.log(chalk.cyan('    1) GitHub Models') + chalk.dim(' — Free with any GitHub account'));
+      console.log(chalk.cyan('    2) OpenAI') + chalk.dim(' — Direct OpenAI API'));
+      console.log(chalk.cyan('    3) Azure OpenAI') + chalk.dim(' — Azure OpenAI Service'));
+      console.log(chalk.cyan('    4) Custom') + chalk.dim(' — Any OpenAI-compatible API (Ollama, etc.)'));
+      console.log('');
 
-    const choice = await ask(chalk.white('  Choice (1-4): '));
-    const providerMap: Record<string, ProviderType> = { '1': 'github', '2': 'openai', '3': 'azure', '4': 'custom' };
-    const provider = providerMap[choice.trim()] || 'github';
+      const choice = await ask(chalk.white('  Choice (1-4): '));
+      const providerMap: Record<string, ProviderType> = { '1': 'github', '2': 'openai', '3': 'azure', '4': 'custom' };
+      provider = providerMap[choice.trim()] || 'github';
+    }
+
     const preset = PROVIDERS[provider];
 
     console.log('');
@@ -605,88 +744,131 @@ program
 
     if (provider === 'github') {
       // GitHub Device Flow — same experience as Copilot CLI
-      console.log(chalk.white('  Signing in with GitHub...'));
-      console.log('');
-
       let token: string;
-      try {
-        const flow = await startDeviceFlow();
-        
-        // Show the code and open browser
-        console.log(chalk.bold(`  Your code: ${chalk.cyan(flow.userCode)}`));
+      if (detectedGitHubToken) {
+        token = detectedGitHubToken;
+        console.log(chalk.green('  ✓ ') + chalk.dim('Using detected GitHub token'));
+      } else {
+        console.log(chalk.white('  Signing in with GitHub...'));
         console.log('');
-        console.log(chalk.dim(`  Opening ${flow.verificationUri} in your browser...`));
-        console.log(chalk.dim('  Enter the code above to authorize TestWithWords.'));
-        console.log('');
-        
-        openBrowser(flow.verificationUri);
-        
-        // Close readline before spinner — ora interferes with stdin
-        rl.close();
 
-        // Wait for approval with a spinner
-        const ora = (await import('ora')).default;
-        const spinner = ora({
-          text: chalk.dim('Waiting for you to approve...'),
-          prefixText: '  ',
-          color: 'cyan',
-        }).start();
-        
         try {
-          token = await flow.pollForToken();
-          spinner.succeed(chalk.green('Approved!'));
-        } catch (err) {
-          spinner.fail(chalk.red(err instanceof Error ? err.message : 'Login failed'));
-          process.exit(1);
-          return; // unreachable but helps TS
-        }
+          const flow = await startDeviceFlow();
 
-        // Recreate readline after spinner is done
-        rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        ask = (question: string): Promise<string> =>
-          new Promise(resolve => rl.question(question, resolve));
-      } catch (err) {
-        console.log(chalk.red('  ✗ ') + (err instanceof Error ? err.message : 'Device flow failed'));
-        console.log('');
-        console.log(chalk.dim('  Alternative: create a PAT at https://github.com/settings/tokens'));
-        const manualToken = await ask(chalk.white('  Paste token manually (or Enter to quit): '));
-        if (!manualToken.trim()) {
+          // Show the code and open browser
+          console.log(chalk.bold(`  Your code: ${chalk.cyan(flow.userCode)}`));
+          console.log('');
+          console.log(chalk.dim(`  Opening ${flow.verificationUri} in your browser...`));
+          console.log(chalk.dim('  Enter the code above to authorize TestWithWords.'));
+          console.log('');
+
+          openBrowser(flow.verificationUri);
+
+          // Close readline before spinner — ora interferes with stdin
           rl.close();
-          return;
+
+          // Wait for approval with a spinner
+          const ora = (await import('ora')).default;
+          const spinner = ora({
+            text: chalk.dim('Waiting for you to approve...'),
+            prefixText: '  ',
+            color: 'cyan',
+          }).start();
+
+          try {
+            token = await flow.pollForToken();
+            spinner.succeed(chalk.green('Approved!'));
+          } catch (err) {
+            spinner.fail(chalk.red(err instanceof Error ? err.message : 'Login failed'));
+            rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+            ask = (question: string): Promise<string> =>
+              new Promise(resolve => rl.question(question, resolve));
+            console.log('');
+            console.log(chalk.dim('  Alternative: create a PAT at https://github.com/settings/tokens'));
+            console.log(chalk.dim('  If you use a PAT, it needs the models:read permission.'));
+            const manualToken = await ask(chalk.white('  Paste token manually (or Enter to quit): '));
+            if (!manualToken.trim()) {
+              rl.close();
+              return;
+            }
+            token = manualToken.trim();
+          }
+
+          // Recreate readline after spinner is done
+          rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          ask = (question: string): Promise<string> =>
+            new Promise(resolve => rl.question(question, resolve));
+        } catch (err) {
+          console.log(chalk.red('  ✗ ') + (err instanceof Error ? err.message : 'Device flow failed'));
+          console.log('');
+          console.log(chalk.dim('  Alternative: create a PAT at https://github.com/settings/tokens')); 
+          console.log(chalk.dim('  If you use a PAT, it needs the models:read permission.'));
+          const manualToken = await ask(chalk.white('  Paste token manually (or Enter to quit): '));
+          if (!manualToken.trim()) {
+            rl.close();
+            return;
+          }
+          token = manualToken.trim();
         }
-        token = manualToken.trim();
       }
 
       // Let user pick model — fetch available models from the API first
       console.log('');
-      const ora2 = (await import('ora')).default;
-      const modelSpinner = ora2({
-        text: chalk.dim('Fetching available models...'),
-        prefixText: '  ',
-        color: 'cyan',
-      }).start();
+      console.log(chalk.dim('  Fetching available models...'));
       
       let availableModels = await fetchAvailableModels(token, preset.baseURL);
+      let probeSummary: { usedCache: boolean; checkedCount: number; totalCount: number } | null = null;
+      let compatibleModels: string[] = [];
       
       if (availableModels && availableModels.length > 0) {
-        modelSpinner.succeed(chalk.green(`Found ${availableModels.length} models`));
+        availableModels = sortGitHubModels(availableModels);
+        console.log(chalk.dim('  Checking which of those work in this CLI...'));
+        const compatibility = await getCompatibleChatModels(
+          'github',
+          token,
+          preset.baseURL,
+          availableModels,
+          preset.defaultModel,
+        );
+        probeSummary = {
+          usedCache: compatibility.usedCache,
+          checkedCount: compatibility.checkedCount,
+          totalCount: compatibility.totalCount,
+        };
+        compatibleModels = sortGitHubModels(compatibility.models);
+        console.log(chalk.green(`  ✓ Found ${availableModels.length} models from the API`));
       } else {
-        modelSpinner.info(chalk.dim('Could not fetch model list — showing defaults'));
-        availableModels = [...GITHUB_MODELS];
+        console.log(chalk.yellow('  ⚠ Could not fetch GitHub Models list — showing known fallbacks'));
+        console.log(chalk.dim('  If this keeps happening, your token may not have GitHub Models access yet.'));
+        console.log(chalk.dim('  PATs need the models:read permission.'));
+        availableModels = sortGitHubModels([...GITHUB_MODELS]);
+        compatibleModels = [...availableModels];
+      }
+
+      if (probeSummary) {
+        const checkedText = probeSummary.usedCache
+          ? `Using cached compatibility results from ${probeSummary.checkedCount} checked model(s).`
+          : `Checked ${probeSummary.checkedCount} of ${probeSummary.totalCount} model(s) to avoid burning rate limits.`;
+        console.log(chalk.dim(`  ${checkedText}`));
+        console.log(chalk.dim('  ✓ = pre-validated in this CLI, ? = discovered from the API but not pre-validated yet.'));
+        console.log(chalk.dim('  VS Code/Copilot may show a broader catalog than this public API path.'));
       }
 
       console.log('');
       console.log(chalk.white('  Available models:'));
       
       // Show models in a compact numbered list, marking recommended
-      const PAGE_SIZE = 20;
+      const PAGE_SIZE = 30;
       const totalModels = availableModels.length;
       const showPaged = totalModels > PAGE_SIZE;
       const displayModels = showPaged ? availableModels.slice(0, PAGE_SIZE) : availableModels;
+      const compatibleSet = new Set(compatibleModels);
       
       displayModels.forEach((m, i) => {
-        const rec = m === 'gpt-4o-mini' ? chalk.dim(' (recommended)') : '';
-        console.log(chalk.cyan(`    ${i + 1}) ${m}`) + rec);
+        const hint = getGitHubModelHint(m);
+        const rec = hint ? chalk.dim(` (${hint})`) : '';
+        const status = compatibleSet.has(m) ? chalk.green('✓') : chalk.dim('?');
+        console.log(`    ${status} ${chalk.cyan(`${i + 1}) ${m}`)}${rec}`);
       });
       
       if (showPaged) {
@@ -695,64 +877,89 @@ program
       
       console.log('');
       console.log(chalk.dim('  Enter a number to pick from the list, or type a model name directly.'));
-      const modelChoice = await ask(chalk.white('  Model (default gpt-4o-mini): '));
-      const trimmedChoice = modelChoice.trim();
-      
-      let model: string;
-      const asNum = parseInt(trimmedChoice);
-      if (!trimmedChoice) {
-        // Default
-        model = 'gpt-4o-mini';
-      } else if (!isNaN(asNum) && asNum >= 1 && asNum <= totalModels) {
-        // Picked by number
-        model = availableModels[asNum - 1];
-      } else {
-        // Typed a model name directly
-        model = trimmedChoice;
-      }
+      const defaultGitHubModel = compatibleModels.includes(preset.defaultModel)
+        ? preset.defaultModel
+        : compatibleModels[0] || availableModels[0];
+      while (true) {
+        const modelChoice = await ask(chalk.white(`  Model (default ${defaultGitHubModel}): `));
+        const model = pickNumberedOrNamedModel(modelChoice, availableModels, defaultGitHubModel);
 
-      config = {
-        provider: 'github',
-        apiKey: token,
-        baseURL: preset.baseURL,
-        model,
-        displayName: 'GitHub Models',
-      };
+        config = {
+          provider: 'github',
+          apiKey: token,
+          baseURL: preset.baseURL,
+          model,
+          displayName: 'GitHub Models',
+        };
+
+        console.log(chalk.dim(`  Validating ${model}...`));
+
+        const validation = await validateAuthConfig(config);
+        if (validation.ok) {
+          console.log(chalk.green(`  ✓ Model ready: ${model}`));
+          break;
+        }
+
+        console.log(chalk.red(`  ✗ ${validation.error || 'Model validation failed'}`));
+        console.log(chalk.dim('  Pick another model, or press Ctrl+C to cancel.'));
+        console.log('');
+      }
 
     } else if (provider === 'openai') {
       const key = await ask(chalk.white('  OpenAI API key: '));
-      const model = await ask(chalk.white('  Model (default gpt-4o-mini): '));
-      config = {
-        provider: 'openai',
-        apiKey: key.trim(),
-        model: model.trim() || 'gpt-4o-mini',
-        displayName: 'OpenAI',
-      };
+      while (true) {
+        const model = await ask(chalk.white('  Model (default gpt-4o-mini): '));
+        config = {
+          provider: 'openai',
+          apiKey: key.trim(),
+          model: model.trim() || 'gpt-4o-mini',
+          displayName: 'OpenAI',
+        };
+
+        const validation = await validateAuthConfig(config);
+        if (validation.ok) break;
+        console.log(chalk.red('  ✗ ') + (validation.error || 'Model validation failed'));
+        console.log('');
+      }
 
     } else if (provider === 'azure') {
       const key = await ask(chalk.white('  Azure OpenAI API key: '));
       const endpoint = await ask(chalk.white('  Azure endpoint URL: '));
-      const model = await ask(chalk.white('  Deployment name (default gpt-4o-mini): '));
-      config = {
-        provider: 'azure',
-        apiKey: key.trim(),
-        baseURL: endpoint.trim(),
-        model: model.trim() || 'gpt-4o-mini',
-        apiVersion: '2024-06-01',
-        displayName: 'Azure OpenAI',
-      };
+      while (true) {
+        const model = await ask(chalk.white('  Deployment name (default gpt-4o-mini): '));
+        config = {
+          provider: 'azure',
+          apiKey: key.trim(),
+          baseURL: endpoint.trim(),
+          model: model.trim() || 'gpt-4o-mini',
+          apiVersion: '2024-06-01',
+          displayName: 'Azure OpenAI',
+        };
+
+        const validation = await validateAuthConfig(config);
+        if (validation.ok) break;
+        console.log(chalk.red('  ✗ ') + (validation.error || 'Model validation failed'));
+        console.log('');
+      }
 
     } else {
       const baseURL = await ask(chalk.white('  API base URL (e.g. http://localhost:11434/v1): '));
       const key = await ask(chalk.white('  API key (or "none"): '));
-      const model = await ask(chalk.white('  Model name: '));
-      config = {
-        provider: 'custom',
-        apiKey: key.trim() === 'none' ? 'none' : key.trim(),
-        baseURL: baseURL.trim(),
-        model: model.trim() || 'default',
-        displayName: `Custom (${baseURL.trim()})`,
-      };
+      while (true) {
+        const model = await ask(chalk.white('  Model name: '));
+        config = {
+          provider: 'custom',
+          apiKey: key.trim() === 'none' ? 'none' : key.trim(),
+          baseURL: baseURL.trim(),
+          model: model.trim() || 'default',
+          displayName: `Custom (${baseURL.trim()})`,
+        };
+
+        const validation = await validateAuthConfig(config);
+        if (validation.ok) break;
+        console.log(chalk.red('  ✗ ') + (validation.error || 'Model validation failed'));
+        console.log('');
+      }
     }
 
     await saveConfig(config);
@@ -760,10 +967,148 @@ program
     console.log(chalk.green('  ✓ ') + `Saved! Using ${chalk.bold(config.displayName)} with ${chalk.bold(config.model)}`);
     console.log(chalk.dim(`    Config: ${getConfigPath()}`));
     console.log('');
-    console.log(chalk.dim('  You can now run tests with: tww run "your test scenario"'));
+    console.log(chalk.dim('  Next steps:'));
+    console.log(chalk.cyan('    tww run "Go to https://example.com and verify the page loads"'));
+    console.log(chalk.cyan('    tww run first.test.tww'));
+    console.log(chalk.cyan('    tww launch --browser edge   then   tww run tests/ --attach --browser edge'));
     console.log('');
 
     rl.close();
+  });
+
+program
+  .command('models')
+  .description('List models available from your configured provider')
+  .option('--check', 'Pre-validate discovered models where supported')
+  .addHelpText('after', `
+
+Examples:
+  tww models
+  tww models --check
+
+Notes:
+  GitHub Models: fetches the live API catalog and can pre-check compatibility.
+  Azure OpenAI: deployments are not enumerable here; use your configured deployment name.
+`)
+  .action(async (opts: any) => {
+    const auth = await getResolvedAuthOrExit();
+
+    printSection('Available Models');
+    console.log(chalk.dim(`  Provider: ${auth.displayName}`));
+    console.log(chalk.dim(`  Current:  ${auth.model}`));
+
+    if (auth.provider === 'azure') {
+      console.log('');
+      console.log(chalk.yellow('  Azure OpenAI does not expose deployment discovery through this CLI path.'));
+      const validation = await validateAuthConfig(auth);
+      printCheck(validation.ok, 'Configured deployment', validation.ok ? auth.model : validation.error);
+      console.log('');
+      return;
+    }
+
+    const models = await fetchAvailableModels(auth.apiKey, auth.baseURL);
+    if (!models || models.length === 0) {
+      console.log('');
+      console.log(chalk.red('  ✗ Could not fetch a model list from the provider.'));
+      console.log('');
+      process.exit(1);
+      return;
+    }
+
+    const sortedModels = auth.provider === 'github'
+      ? sortGitHubModels(models, auth.model)
+      : [...new Set(models)].sort((a, b) => a.localeCompare(b));
+
+    let compatibleSet = new Set<string>();
+    let compatibilitySummary: string | null = null;
+    if (opts.check && auth.provider === 'github') {
+      const compatibility = await getCompatibleChatModels(
+        'github',
+        auth.apiKey,
+        auth.baseURL,
+        sortedModels,
+        auth.model,
+      );
+      compatibleSet = new Set(compatibility.models);
+      compatibilitySummary = compatibility.usedCache
+        ? `Using cached results from ${compatibility.checkedCount} checked model(s).`
+        : `Checked ${compatibility.checkedCount} of ${compatibility.totalCount} model(s).`;
+    }
+
+    console.log('');
+    console.log(chalk.white(`  ${sortedModels.length} model(s) discovered:`));
+    sortedModels.forEach((model, index) => {
+      const current = model === auth.model ? chalk.yellow(' (current)') : '';
+      const checked = opts.check && auth.provider === 'github'
+        ? compatibleSet.has(model)
+          ? chalk.green('✓ ')
+          : chalk.dim('? ')
+        : '';
+      console.log(`  ${checked}${chalk.cyan(`${index + 1})`)} ${model}${current}`);
+    });
+
+    if (compatibilitySummary) {
+      console.log('');
+      console.log(chalk.dim(`  ${compatibilitySummary}`));
+      console.log(chalk.dim('  ✓ = pre-validated in this CLI, ? = discovered but not pre-validated in this run.'));
+    }
+
+    console.log('');
+  });
+
+program
+  .command('doctor')
+  .description('Check auth, model, browser, and config health')
+  .option('--port <port>', 'Attach-mode port to inspect', '9222')
+  .addHelpText('after', `
+
+Examples:
+  tww doctor
+  tww doctor --port 9333
+
+Checks:
+  Auth configuration, current model validation, browser availability, and attach-mode readiness.
+`)
+  .action(async (opts: any) => {
+    printSection('Doctor');
+
+    const port = parseOptionalInt(opts.port) ?? 9222;
+    const cdpUrl = `http://localhost:${port}`;
+
+    let auth: AuthConfig | null = null;
+    auth = await resolveAuth();
+
+    printSection('Auth');
+    if (!auth) {
+      printCheck(false, 'Provider configured', 'Run tww auth');
+    } else {
+      printCheck(true, 'Provider configured', `${auth.displayName} · ${auth.model}`);
+      const validation = await validateAuthConfig(auth);
+      printCheck(validation.ok, 'Current model validation', validation.ok ? 'The configured model answered a test request.' : validation.error);
+    }
+
+    printSection('Project Config');
+    try {
+      const projectConfig = await loadProjectConfig();
+      const hasConfig = Object.keys(projectConfig).length > 0;
+      printCheck(true, hasConfig ? 'Project config loaded' : 'No project config found', hasConfig ? JSON.stringify(projectConfig) : 'Using CLI/default values.');
+    } catch (err) {
+      printCheck(false, 'Project config invalid', err instanceof Error ? err.message : String(err));
+    }
+
+    printSection('Browser');
+    const detectedBrowser = detectInstalledBrowser();
+    printCheck(Boolean(detectedBrowser), 'Attach-capable browser installed', detectedBrowser ? detectedBrowser : 'Install Chrome or Edge for --attach mode.');
+    const attachReady = await isBrowserAvailable(cdpUrl);
+    printCheck(attachReady, `Attach endpoint on port ${port}`, attachReady ? `${cdpUrl} is reachable.` : `Nothing listening at ${cdpUrl}. Run: tww launch --browser edge${port !== 9222 ? ` --port ${port}` : ''}`);
+
+    if (auth && auth.provider !== 'azure') {
+      printSection('Models API');
+      const models = await fetchAvailableModels(auth.apiKey, auth.baseURL);
+      printCheck(Boolean(models && models.length > 0), 'Model list fetch', models && models.length > 0 ? `${models.length} model(s) discovered.` : 'Could not fetch models from the provider.');
+    }
+
+    console.log('');
   });
 
 // ─── Init command ───

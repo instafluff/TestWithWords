@@ -6,9 +6,14 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
+import { createHash } from 'crypto';
+import OpenAI, { AzureOpenAI } from 'openai';
 
 const CONFIG_DIR = join(homedir(), '.testwithwords');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+const MODEL_CACHE_FILE = join(CONFIG_DIR, 'model-cache.json');
+const MODEL_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const MAX_DYNAMIC_MODEL_PROBES = 20;
 
 /** Supported LLM providers */
 export type ProviderType = 'github' | 'azure' | 'openai' | 'custom';
@@ -26,6 +31,11 @@ export interface AuthConfig {
   apiVersion?: string;
   /** Display name for the provider */
   displayName: string;
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  error?: string;
 }
 
 /** Provider presets */
@@ -62,14 +72,27 @@ export const PROVIDERS: Record<ProviderType, {
 export const GITHUB_MODELS_FALLBACK = [
   'gpt-4o-mini',
   'gpt-4o',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-  'o3-mini',
-  'o1-mini',
+  'Meta-Llama-3.1-8B-Instruct',
 ];
 
 // Keep the old export name for backward compat
 export const GITHUB_MODELS = GITHUB_MODELS_FALLBACK;
+
+interface ModelListEntry {
+  id?: string;
+  name?: string;
+  task?: string;
+}
+
+interface ModelCacheEntry {
+  checkedAt: number;
+  modelSetHash: string;
+  compatibleModels: string[];
+}
+
+interface ModelCacheFile {
+  entries: Record<string, ModelCacheEntry>;
+}
 
 /**
  * Fetch available models from an OpenAI-compatible API.
@@ -92,12 +115,24 @@ export async function fetchAvailableModels(
 
     if (!response.ok) return null;
 
-    const data = await response.json() as { data?: Array<{ id: string }> };
-    if (!data.data || !Array.isArray(data.data)) return null;
+    const payload = await response.json() as ModelListEntry[] | { data?: ModelListEntry[] };
+    const entries = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.data)
+        ? payload.data
+        : null;
 
-    const models = data.data
-      .map((m: { id: string }) => m.id)
-      .filter((id: string) => id && typeof id === 'string')
+    if (!entries || entries.length === 0) return null;
+
+    const models = entries
+      .filter((m) => !m.task || m.task === 'chat-completion')
+      .map((m) => {
+        if (typeof m.name === 'string' && m.name.trim()) return m.name.trim();
+        if (typeof m.id === 'string' && m.id.trim()) return m.id.trim();
+        return null;
+      })
+      .filter((id): id is string => Boolean(id))
+      .filter((id, index, all) => all.indexOf(id) === index)
       .sort();
 
     return models.length > 0 ? models : null;
@@ -169,6 +204,8 @@ export function tryAutoDetectGitHub(): string | null {
  * 3. Auto-detect from gh CLI
  */
 export async function resolveAuth(): Promise<AuthConfig | null> {
+  const saved = await loadConfig();
+
   // 1. Explicit env vars
   const githubToken = process.env.GITHUB_TOKEN;
   if (githubToken) {
@@ -176,7 +213,7 @@ export async function resolveAuth(): Promise<AuthConfig | null> {
       provider: 'github',
       apiKey: githubToken,
       baseURL: PROVIDERS.github.baseURL,
-      model: PROVIDERS.github.defaultModel,
+      model: saved?.provider === 'github' ? saved.model : PROVIDERS.github.defaultModel,
       displayName: 'GitHub Models (env)',
     };
   }
@@ -188,8 +225,8 @@ export async function resolveAuth(): Promise<AuthConfig | null> {
       provider: 'azure',
       apiKey: azureKey,
       baseURL: azureEndpoint,
-      model: PROVIDERS.azure.defaultModel,
-      apiVersion: '2024-06-01',
+      model: saved?.provider === 'azure' ? saved.model : PROVIDERS.azure.defaultModel,
+      apiVersion: saved?.provider === 'azure' ? saved.apiVersion : '2024-06-01',
       displayName: 'Azure OpenAI (env)',
     };
   }
@@ -199,13 +236,12 @@ export async function resolveAuth(): Promise<AuthConfig | null> {
     return {
       provider: 'openai',
       apiKey: openaiKey,
-      model: PROVIDERS.openai.defaultModel,
+      model: saved?.provider === 'openai' ? saved.model : PROVIDERS.openai.defaultModel,
       displayName: 'OpenAI (env)',
     };
   }
 
   // 2. Saved config
-  const saved = await loadConfig();
   if (saved) return saved;
 
   // 3. Auto-detect gh CLI
@@ -228,4 +264,187 @@ export async function resolveAuth(): Promise<AuthConfig | null> {
  */
 export function getConfigPath(): string {
   return CONFIG_FILE;
+}
+
+function createClient(config: AuthConfig): OpenAI | AzureOpenAI {
+  if (config.provider === 'azure') {
+    return new AzureOpenAI({
+      apiKey: config.apiKey,
+      endpoint: (config.baseURL || '').replace(/\/$/, ''),
+      apiVersion: config.apiVersion || '2024-06-01',
+    });
+  }
+
+  const opts: ConstructorParameters<typeof OpenAI>[0] = {
+    apiKey: config.apiKey,
+  };
+
+  if (config.baseURL) {
+    opts.baseURL = config.baseURL;
+  }
+
+  return new OpenAI(opts);
+}
+
+function hashValue(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+function getCacheKey(provider: ProviderType, apiKey: string, baseURL?: string): string {
+  return hashValue(`${provider}|${baseURL || ''}|${apiKey}`);
+}
+
+function getModelSetHash(models: string[]): string {
+  return hashValue([...models].sort().join('\n'));
+}
+
+async function loadModelCache(): Promise<ModelCacheFile> {
+  try {
+    if (!existsSync(MODEL_CACHE_FILE)) {
+      return { entries: {} };
+    }
+    const data = await readFile(MODEL_CACHE_FILE, 'utf-8');
+    const parsed = JSON.parse(data) as ModelCacheFile;
+    return parsed.entries ? parsed : { entries: {} };
+  } catch {
+    return { entries: {} };
+  }
+}
+
+async function saveModelCache(cache: ModelCacheFile): Promise<void> {
+  await mkdir(CONFIG_DIR, { recursive: true });
+  await writeFile(MODEL_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf-8');
+}
+
+function prioritizeModels(models: string[], preferredModel?: string): string[] {
+  const unique = models.filter((model, index) => models.indexOf(model) === index);
+  if (!preferredModel || !unique.includes(preferredModel)) {
+    return unique;
+  }
+  return [preferredModel, ...unique.filter(model => model !== preferredModel)];
+}
+
+export async function getCompatibleChatModels(
+  provider: ProviderType,
+  apiKey: string,
+  baseURL: string | undefined,
+  models: string[],
+  preferredModel?: string,
+): Promise<{
+  models: string[];
+  usedCache: boolean;
+  checkedCount: number;
+  totalCount: number;
+}> {
+  const orderedModels = prioritizeModels(models, preferredModel);
+  const candidates = orderedModels.slice(0, MAX_DYNAMIC_MODEL_PROBES);
+  const cacheKey = getCacheKey(provider, apiKey, baseURL);
+  const modelSetHash = getModelSetHash(orderedModels);
+  const cache = await loadModelCache();
+  const cached = cache.entries[cacheKey];
+
+  if (
+    cached
+    && cached.modelSetHash === modelSetHash
+    && (Date.now() - cached.checkedAt) < MODEL_CACHE_TTL_MS
+  ) {
+    return {
+      models: cached.compatibleModels.filter(model => orderedModels.includes(model)),
+      usedCache: true,
+      checkedCount: Math.min(orderedModels.length, MAX_DYNAMIC_MODEL_PROBES),
+      totalCount: orderedModels.length,
+    };
+  }
+
+  const compatibleModels: string[] = [];
+
+  for (const model of candidates) {
+    const validation = await validateAuthConfig({
+      provider,
+      apiKey,
+      baseURL,
+      model,
+      displayName: PROVIDERS[provider].displayName,
+    });
+
+    if (validation.ok) {
+      compatibleModels.push(model);
+    }
+  }
+
+  cache.entries[cacheKey] = {
+    checkedAt: Date.now(),
+    modelSetHash,
+    compatibleModels,
+  };
+  await saveModelCache(cache);
+
+  return {
+    models: compatibleModels,
+    usedCache: false,
+    checkedCount: candidates.length,
+    totalCount: orderedModels.length,
+  };
+}
+
+/**
+ * Validate that the configured provider/model combination can actually answer
+ * a tiny chat request. Used during `tww auth` so bad models don't get saved.
+ */
+export async function validateAuthConfig(config: AuthConfig): Promise<ValidationResult> {
+  try {
+    const client = createClient(config);
+    await client.chat.completions.create({
+      model: config.model,
+      messages: [{ role: 'user', content: 'Reply with OK.' }],
+      max_tokens: 5,
+      temperature: 0,
+    });
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: formatValidationError(config, error),
+    };
+  }
+}
+
+function formatValidationError(config: AuthConfig, error: unknown): string {
+  const status = typeof error === 'object' && error && 'status' in error
+    ? Number((error as { status?: number }).status)
+    : undefined;
+
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (status === 401) {
+    return 'Authentication failed. Your token/key was rejected.';
+  }
+
+  if (status === 403) {
+    if (config.provider === 'github') {
+      return 'GitHub accepted the token, but this account/token does not have access to GitHub Models. If you use a PAT, it needs the models:read permission.';
+    }
+    return 'Access forbidden by the provider.';
+  }
+
+  if (status === 404) {
+    if (config.provider === 'azure') {
+      return `Deployment not found: ${config.model}. For Azure OpenAI, this must be your deployment name, not the base model name.`;
+    }
+    return `Model not found: ${config.model}.`;
+  }
+
+  if (status === 429) {
+    if (config.provider === 'github') {
+      return 'GitHub Models rate limit hit for this account/model. Try gpt-4o-mini or a smaller open model, or wait for the limit to reset.';
+    }
+    return 'Rate limit hit. Try again in a moment.';
+  }
+
+  if (config.provider === 'github' && /model|deployment|not found|unsupported/i.test(message)) {
+    return `That model is not available through the GitHub Models API: ${config.model}.`;
+  }
+
+  return message;
 }

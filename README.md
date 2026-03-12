@@ -78,6 +78,10 @@ The `.tww` file is both the test and its documentation. When the UI changes, the
 
 Full docs and examples at **[testwithwords.com](https://www.testwithwords.com)**
 
+Useful utilities:
+- `tww models` — see what models your current provider exposes
+- `tww doctor` — check auth, model, browser, and attach-mode readiness
+
 ## How It Works
 
 ```

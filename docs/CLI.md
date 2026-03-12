@@ -17,6 +17,8 @@ The commands you'll use most often:
 | Run a quick inline test | `tww run "Verify the homepage loads" --url https://example.com` |
 | Test with your logged-in browser | `tww run tests/ --attach` |
 | Set up your AI provider | `tww auth` |
+| See available models | `tww models` |
+| Check setup health | `tww doctor` |
 | Create a config file | `tww init` |
 | Explore a site interactively | `tww interactive` |
 
@@ -65,14 +67,62 @@ tww auth --logout
 
 #### GitHub Models — available models
 
-| Model | Best for |
-|-------|----------|
-| `gpt-4o-mini` | **Default.** Fast, cheap, great for most tests |
-| `gpt-4o` | More capable, slower — for complex scenarios |
-| `gpt-4.1-mini` | Newer mini model |
-| `gpt-4.1-nano` | Smallest, fastest — quick smoke tests |
-| `o3-mini` | Reasoning model — for tricky page states |
-| `o1-mini` | Reasoning model |
+GitHub's model catalog changes frequently. TWW fetches the live API model list during auth instead of relying on a static list.
+
+- Use `tww models` to see what your current provider exposes
+- Use `tww models --check` to pre-validate GitHub Models compatibility in the CLI path
+
+---
+
+### tww models
+
+Show the models available from your currently configured provider.
+
+```bash
+tww models [options]
+```
+
+#### Flags
+
+| Flag | What it does |
+|------|-------------|
+| `--check` | Pre-validate discovered models where supported (currently most useful for GitHub Models) |
+
+#### Examples
+
+```bash
+# Show the live model list for your current provider
+tww models
+
+# For GitHub Models, also check CLI compatibility
+tww models --check
+```
+
+---
+
+### tww doctor
+
+Run a quick environment and configuration health check.
+
+```bash
+tww doctor [options]
+```
+
+#### Flags
+
+| Flag | What it does |
+|------|-------------|
+| `--port <port>` | Check a custom attach-mode debug port (default: `9222`) |
+
+#### Examples
+
+```bash
+# Check auth, model, browser, and attach readiness
+tww doctor
+
+# Check a non-default attach port
+tww doctor --port 9333
+```
 
 ---
 
@@ -300,8 +350,8 @@ tww launch --browser edge
 # Launch Chrome on a custom port
 tww launch --browser chrome --port 9333
 
-# Then run tests against it
-tww run tests/ --attach --port 9333
+# Sign in if needed, then run tests against it
+tww run tests/ --attach 9333 --browser chrome
 ```
 
 Use `tww launch` + `tww run --attach` when you need to manually log into a site first, then run automated tests against your authenticated session.
