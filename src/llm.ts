@@ -1,11 +1,17 @@
 // LLM integration — sends page state to the model, gets back tool calls
 // Uses OpenAI function calling (tool-use) for structured, extensible actions.
 // Supports GitHub Models (free!), Azure OpenAI, OpenAI, and any OpenAI-compatible API.
+//
+// STATELESS architecture: each call builds a fresh 2-message conversation
+// (system + user) with a compact action log instead of accumulating history.
+// This keeps token usage constant regardless of step count, critical for
+// low-budget endpoints like GitHub Models free tier (~8K input tokens).
 
 import OpenAI, { AzureOpenAI } from 'openai';
 import type { ToolCall, PageState, TokenUsage, LLMResult } from './types.js';
 import type { AuthConfig } from './auth.js';
 import { getSystemPrompt, getUserPrompt } from './prompts.js';
+import type { ActionRecord } from './prompts.js';
 import { getToolsForLLM } from './tools.js';
 
 let client: OpenAI | null = null;
@@ -47,18 +53,15 @@ export function initLLMFromConfig(config: AuthConfig): void {
   }
 }
 
-/** Conversation history for the current test run */
-let conversationHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-
-/** Reset conversation for a new test */
+/** Reset conversation for a new test (no-op in stateless mode, kept for API compat) */
 export function resetConversation(): void {
-  conversationHistory = [];
+  // Stateless mode — nothing to reset
 }
 
 /**
  * Ask the LLM for the next tool call given the current page state.
- * Uses OpenAI function calling — the LLM picks a tool and provides arguments.
- * Maintains conversation history so the LLM has full context of the test run.
+ * Uses STATELESS mode: builds a fresh 2-message conversation each call
+ * with a compact action history instead of accumulating conversation.
  * Returns the tool call + token usage from the API response.
  */
 export async function getNextToolCall(
@@ -66,28 +69,21 @@ export async function getNextToolCall(
   pageState: PageState,
   stepIndex: number,
   model: string,
+  actionHistory: ActionRecord[] = [],
 ): Promise<LLMResult> {
   if (!client) throw new Error('LLM not initialized. Call initLLMFromConfig() first.');
 
-  // On first step, set up the system prompt
-  if (conversationHistory.length === 0) {
-    conversationHistory.push({
-      role: 'system',
-      content: getSystemPrompt(),
-    });
-  }
-
-  // Add the current page state as a user message
-  conversationHistory.push({
-    role: 'user',
-    content: getUserPrompt(scenario, pageState, stepIndex),
-  });
+  // Build fresh messages each call — no history accumulation
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: getSystemPrompt() },
+    { role: 'user', content: getUserPrompt(scenario, pageState, stepIndex, actionHistory) },
+  ];
 
   const response = await client.chat.completions.create({
     model,
-    messages: conversationHistory,
+    messages,
     temperature: 0.1,
-    max_tokens: 500,
+    max_tokens: 400,
     tools: getToolsForLLM(),
     tool_choice: 'required',
   });
@@ -130,41 +126,15 @@ export async function getNextToolCall(
     args,
   };
 
-  // Add assistant message with tool call to history
-  conversationHistory.push({
-    role: 'assistant',
-    content: null,
-    tool_calls: [{
-      id: tc.id,
-      type: 'function',
-      function: { name: tc.function.name, arguments: tc.function.arguments },
-    }],
-  });
-
-  // Add tool result to history (brief, so the LLM knows what happened)
-  conversationHistory.push({
-    role: 'tool',
-    tool_call_id: tc.id,
-    content: 'Executed. See updated page state in next message.',
-  });
-
-  // Trim old conversation to control token usage
-  trimHistory();
-
   return { toolCall, usage };
 }
 
 /**
  * Report a tool execution result back to the conversation.
- * Called after executing a tool so the LLM knows about errors.
+ * No-op in stateless mode — errors are tracked via ActionRecord history.
  */
-export function reportToolResult(toolCallId: string, result: string): void {
-  // The tool result was already added in getNextToolCall with a generic message.
-  // For errors, we update the last tool message with the actual result.
-  const lastToolMsg = [...conversationHistory].reverse().find(m => m.role === 'tool');
-  if (lastToolMsg && 'content' in lastToolMsg) {
-    (lastToolMsg as any).content = result;
-  }
+export function reportToolResult(_toolCallId: string, _result: string): void {
+  // Stateless mode — errors are passed back via actionHistory
 }
 
 /**
@@ -191,19 +161,4 @@ function parseFallbackContent(content: string): ToolCall {
     // Not JSON
   }
   throw new Error(`LLM returned text instead of a tool call: ${content.slice(0, 200)}`);
-}
-
-/**
- * Trim conversation history to avoid token limit issues.
- * Keeps system prompt + the last 6 exchanges (user + assistant + tool messages).
- * More aggressive trimming helps stay within smaller model limits (e.g. gpt-4o-mini 8K).
- */
-function trimHistory(): void {
-  const MAX_MESSAGES = 15; // ~5 full exchanges (user + assistant + tool)
-  const nonSystem = conversationHistory.filter(m => m.role !== 'system');
-  if (nonSystem.length > MAX_MESSAGES) {
-    const system = conversationHistory.find(m => m.role === 'system');
-    const keep = nonSystem.slice(-MAX_MESSAGES);
-    conversationHistory = system ? [system, ...keep] : keep;
-  }
 }

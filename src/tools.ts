@@ -19,16 +19,17 @@ export interface ToolDefinition {
 /**
  * All tools available to the agent.
  * The LLM sees these as callable functions. The executors handle the actual Playwright commands.
+ * Descriptions are kept minimal to reduce input token count.
  */
 export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Navigation ───
   {
     name: 'navigate',
-    description: 'Navigate to a URL. Use when you need to go to a specific page.',
+    description: 'Go to a URL.',
     parameters: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'The full URL to navigate to' },
+        url: { type: 'string', description: 'Full URL' },
       },
       required: ['url'],
     },
@@ -37,59 +38,58 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Interaction ───
   {
     name: 'click',
-    description: 'Click an element on the page. Use element ref numbers from the page snapshot.',
+    description: 'Click an element by ref number.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number from the page snapshot' },
+        ref: { type: 'number', description: 'Element ref' },
       },
       required: ['ref'],
     },
   },
   {
     name: 'fill',
-    description: 'Type text into an input field, textarea, or contenteditable element. Clears existing content first by default.',
+    description: 'Type text into an input field. Clears existing content first.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number of the input field' },
-        text: { type: 'string', description: 'Text to type into the field' },
-        clear: { type: 'boolean', description: 'Whether to clear existing content first (default: true)' },
+        ref: { type: 'number', description: 'Input field ref' },
+        text: { type: 'string', description: 'Text to type' },
       },
       required: ['ref', 'text'],
     },
   },
   {
     name: 'select_option',
-    description: 'Select an option from a dropdown/select element by its visible label text.',
+    description: 'Select a dropdown option by visible text.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number of the select/dropdown' },
-        value: { type: 'string', description: 'The visible text of the option to select' },
+        ref: { type: 'number', description: 'Select element ref' },
+        value: { type: 'string', description: 'Option text' },
       },
       required: ['ref', 'value'],
     },
   },
   {
     name: 'check',
-    description: 'Check or uncheck a checkbox or toggle a radio button.',
+    description: 'Check/uncheck a checkbox or radio button.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number of the checkbox/radio' },
-        checked: { type: 'boolean', description: 'Whether to check (true) or uncheck (false). Default: true' },
+        ref: { type: 'number', description: 'Element ref' },
+        checked: { type: 'boolean', description: 'true=check, false=uncheck' },
       },
       required: ['ref'],
     },
   },
   {
     name: 'hover',
-    description: 'Hover over an element to reveal tooltips, dropdown menus, or trigger hover states.',
+    description: 'Hover over an element.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number to hover over' },
+        ref: { type: 'number', description: 'Element ref' },
       },
       required: ['ref'],
     },
@@ -98,11 +98,11 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Keyboard ───
   {
     name: 'press_key',
-    description: 'Press a keyboard key or key combination. Use for Enter, Tab, Escape, Backspace, ArrowDown, Control+A, etc.',
+    description: 'Press a key (Enter, Tab, Escape, ArrowDown, Control+A, etc).',
     parameters: {
       type: 'object',
       properties: {
-        key: { type: 'string', description: 'Key name (e.g. "Enter", "Tab", "Escape", "ArrowDown", "Control+A")' },
+        key: { type: 'string', description: 'Key name' },
       },
       required: ['key'],
     },
@@ -111,12 +111,12 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Scroll ───
   {
     name: 'scroll',
-    description: 'Scroll the page up or down to reveal more content.',
+    description: 'Scroll the page.',
     parameters: {
       type: 'object',
       properties: {
-        direction: { type: 'string', enum: ['up', 'down'], description: 'Scroll direction' },
-        amount: { type: 'number', description: 'Pixels to scroll (default: 500)' },
+        direction: { type: 'string', enum: ['up', 'down'] },
+        amount: { type: 'number', description: 'Pixels (default 500)' },
       },
       required: ['direction'],
     },
@@ -125,12 +125,11 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Wait ───
   {
     name: 'wait',
-    description: 'Wait for content to load or animations to complete. Use when the page is loading or transitioning.',
+    description: 'Wait for content to load.',
     parameters: {
       type: 'object',
       properties: {
-        ms: { type: 'number', description: 'Milliseconds to wait (max 10000)' },
-        reason: { type: 'string', description: 'Why you are waiting' },
+        ms: { type: 'number', description: 'Milliseconds (max 10000)' },
       },
       required: ['ms'],
     },
@@ -139,11 +138,11 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Overlay Handling ───
   {
     name: 'dismiss_overlay',
-    description: 'Dismiss a popup, cookie banner, modal, or overlay. Clicks the specified close/dismiss button, or presses Escape if no ref given.',
+    description: 'Dismiss popup/modal/cookie banner. Click close button ref or press Escape.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference of the close/dismiss button (optional — if omitted, presses Escape)' },
+        ref: { type: 'number', description: 'Close button ref (omit to press Escape)' },
       },
       required: [],
     },
@@ -152,46 +151,45 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Assertions ───
   {
     name: 'assert_visible',
-    description: 'Assert that specific text is visible on the page. Use to verify expected content, headings, messages, labels, or values.',
+    description: 'Assert text is visible on the page.',
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'The text that should be visible on the page' },
-        exact: { type: 'boolean', description: 'Require exact match (default: false, uses substring/contains)' },
+        text: { type: 'string', description: 'Expected text (substring match)' },
       },
       required: ['text'],
     },
   },
   {
     name: 'assert_not_visible',
-    description: 'Assert that specific text is NOT visible on the page. Use to verify error messages are gone, elements were removed, etc.',
+    description: 'Assert text is NOT visible on the page.',
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'The text that should NOT be visible' },
+        text: { type: 'string', description: 'Text that should not appear' },
       },
       required: ['text'],
     },
   },
   {
     name: 'assert_url',
-    description: 'Assert the current page URL contains or matches a pattern.',
+    description: 'Assert current URL contains a pattern.',
     parameters: {
       type: 'object',
       properties: {
-        pattern: { type: 'string', description: 'Text the URL should contain, or a regex pattern' },
+        pattern: { type: 'string', description: 'URL substring or regex' },
       },
       required: ['pattern'],
     },
   },
   {
     name: 'assert_element',
-    description: 'Assert that an element exists with specific state (checked, disabled, expanded, has specific value).',
+    description: 'Assert element state.',
     parameters: {
       type: 'object',
       properties: {
-        ref: { type: 'number', description: 'Element reference number' },
-        state: { type: 'string', enum: ['checked', 'unchecked', 'disabled', 'enabled', 'expanded', 'collapsed'], description: 'Expected element state' },
+        ref: { type: 'number', description: 'Element ref' },
+        state: { type: 'string', enum: ['checked', 'unchecked', 'disabled', 'enabled', 'expanded', 'collapsed'] },
       },
       required: ['ref', 'state'],
     },
@@ -200,11 +198,11 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Human Handoff ───
   {
     name: 'wait_for_user',
-    description: 'Pause and ask the user to intervene. ONLY use for CAPTCHAs, MFA prompts, or login forms that require real credentials.',
+    description: 'Pause for user intervention (CAPTCHA, MFA, login).',
     parameters: {
       type: 'object',
       properties: {
-        reason: { type: 'string', description: 'What the user needs to do and why' },
+        reason: { type: 'string', description: 'What the user needs to do' },
       },
       required: ['reason'],
     },
@@ -213,12 +211,12 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   // ─── Terminal: Test Complete ───
   {
     name: 'done',
-    description: 'Declare the test complete with a pass or fail result. Call ONLY when you can determine the final test outcome.',
+    description: 'Declare the test pass or fail.',
     parameters: {
       type: 'object',
       properties: {
-        result: { type: 'string', enum: ['pass', 'fail'], description: 'Test result: pass if all expectations met, fail otherwise' },
-        summary: { type: 'string', description: 'Detailed summary of what happened, what was verified, and the outcome' },
+        result: { type: 'string', enum: ['pass', 'fail'] },
+        summary: { type: 'string', description: 'What happened and why' },
       },
       required: ['result', 'summary'],
     },

@@ -154,8 +154,8 @@ function formatTreeText(elements: PageElement[]): string {
     lines.push(line);
   }
   
-  // Truncate if too long — LLM context is precious
-  const MAX_LINES = 80;
+  // Truncate if too long — every token counts against the ~8K budget
+  const MAX_LINES = 60;
   if (lines.length > MAX_LINES) {
     // Prioritize: keep interactive elements, trim static text
     const interactive = lines.filter(l => /\b(button|link|textbox|searchbox|combobox|checkbox|radio|tab|menuitem|switch)\b/.test(l));
@@ -315,7 +315,7 @@ async function extractPageContext(page: Page, elements: PageElement[]): Promise<
     const mainEl = document.querySelector('main, [role="main"], #content, #main, .content, article')
       || document.body;
     const rawText = (mainEl.textContent || '').replace(/\s+/g, ' ').trim();
-    const visibleText = rawText.slice(0, 800); // cap aggressively to avoid token bloat
+    const visibleText = rawText.slice(0, 500); // cap aggressively — tokens are precious
 
     // Detect overlays — elements with position:fixed/absolute and high z-index
     const overlays: Array<{

@@ -1,108 +1,110 @@
-// Prompts for the LLM — slim system prompt + rich page state
-// Tool definitions are in tools.ts and provided via function calling.
-// The system prompt focuses on behavior, rules, and strategy.
+// Prompts for the LLM — compact system prompt + stateless page state
+// Optimized for low token budgets (e.g. GitHub Models free tier ~8K input tokens).
+// Each LLM call is stateless: system prompt + one user message with action log + page state.
 
 import type { PageState } from './types.js';
 
+/** Compact record of a completed action for the history log */
+export interface ActionRecord {
+  /** Tool name (e.g. "click", "navigate") */
+  tool: string;
+  /** Compact argument summary (e.g. "[5] 'See Demo'") */
+  target: string;
+  /** Whether it succeeded */
+  ok: boolean;
+  /** Error message if failed */
+  error?: string;
+}
+
 export function getSystemPrompt(): string {
-  return `You are a browser automation agent for UI testing. You execute test scenarios step by step by calling tools.
+  return `You are a browser test agent. Execute the scenario by calling tools.
 
-## How It Works
-1. You receive a test scenario in natural language
-2. You see the current page state: URL, title, interactive elements, page context
-3. You call ONE tool to perform an action
-4. After the tool executes, you'll see the updated page state
-5. Repeat until the test passes or fails
+Rules:
+- Call ONE tool per turn using element ref numbers from the snapshot
+- Use page context (headings, text) to verify expectations
+- If loading, call wait. If overlay blocks, use dismiss_overlay or press_key Escape
+- When done: call done with pass/fail
+- If stuck (action fails twice), try a different approach
+- Never invent ref numbers — only use refs from the snapshot`;
+}
 
-## Page Context
-You receive rich context extracted from the page:
-- **Headings**: Visible headings
-- **Visible text**: Main text content
-- **Overlays**: Cookie banners, modals, popups, dialogs
-- **Errors**: Error messages on the page
-- **Forms**: Form fields and their current state
-Use ALL of this to make informed decisions.
-
-## Handling Overlays & Popups
-When the page context shows an overlay:
-1. Look for a dismiss button ("Reject", "Decline", "Close", "X", "Accept") in the element tree
-2. Use dismiss_overlay with the ref of that button
-3. If no button found, try press_key with Escape
-4. Only use wait_for_user if it requires human credentials (MFA, CAPTCHA)
-
-## Rules
-- Call exactly ONE tool per turn
-- Use element ref numbers from the page snapshot — never guess or invent ref numbers
-- Use page context (headings, visible text, errors) to verify expectations
-- If the page is loading, use wait (1000-3000ms)
-- When expectations are met, call done with result "pass"
-- When the test cannot succeed after reasonable attempts, call done with result "fail"
-- Do NOT get stuck in loops — if an action fails twice, try something different
-- Keep descriptions concise — they are shown to the user`;
+/**
+ * Build a compact action summary from the history log.
+ */
+function formatActionHistory(history: ActionRecord[]): string {
+  if (history.length === 0) return '';
+  const lines = history.map((a, i) => {
+    const status = a.ok ? '✓' : `✗ ${a.error || 'failed'}`;
+    return `${i + 1}. ${a.tool} ${a.target} ${status}`;
+  });
+  return `## Done\n${lines.join('\n')}`;
 }
 
 export function getUserPrompt(
   scenario: string,
   pageState: PageState,
   stepIndex: number,
+  actionHistory: ActionRecord[] = [],
 ): string {
   const parts: string[] = [];
 
-  if (stepIndex === 0) {
-    parts.push(`## Test Scenario\n${scenario}`);
+  // Always include scenario so the LLM knows the goal
+  parts.push(`## Scenario\n${scenario}`);
+
+  // Compact action history — replaces full conversation history
+  const historyText = formatActionHistory(actionHistory);
+  if (historyText) {
     parts.push('');
+    parts.push(historyText);
   }
 
-  parts.push(`## Current Page (Step ${stepIndex})`);
+  parts.push('');
+  parts.push(`## Page (step ${stepIndex})`);
   parts.push(`URL: ${pageState.url}`);
-  parts.push(`Title: ${pageState.title}`);
+  if (pageState.title) parts.push(`Title: ${pageState.title}`);
 
-  // Page context — gives the LLM understanding of what's on screen
   const ctx = pageState.pageContext;
 
-  if (ctx.headings.length > 0) {
-    parts.push('');
-    parts.push('## Headings');
-    parts.push(ctx.headings.map(h => `- ${h}`).join('\n'));
-  }
-
+  // Overlays are high-priority — they block interaction
   if (ctx.overlays.length > 0) {
     parts.push('');
-    parts.push('## ⚠ Overlays Detected');
+    parts.push('## Overlays');
     for (const o of ctx.overlays) {
-      parts.push(`- **${o.type}**: "${o.text.slice(0, 150)}"${o.hasCloseButton ? ' (has close button)' : ''}`);
+      parts.push(`- ${o.type}: "${o.text.slice(0, 100)}"${o.hasCloseButton ? ' (close btn)' : ''}`);
     }
   }
 
   if (ctx.errors.length > 0) {
     parts.push('');
-    parts.push('## ❌ Errors on Page');
-    for (const e of ctx.errors) {
-      parts.push(`- ${e}`);
-    }
+    parts.push('## Errors');
+    parts.push(ctx.errors.slice(0, 3).join('\n'));
+  }
+
+  if (ctx.headings.length > 0) {
+    parts.push('');
+    parts.push('## Headings');
+    parts.push(ctx.headings.slice(0, 6).join(', '));
+  }
+
+  parts.push('');
+  parts.push('## Elements');
+  parts.push(pageState.treeText);
+
+  // Only include visible text if it adds value (and keep it very short)
+  if (ctx.visibleText.length > 0) {
+    parts.push('');
+    parts.push('## Text');
+    parts.push(ctx.visibleText.slice(0, 300));
   }
 
   if (ctx.forms.length > 0) {
     parts.push('');
-    parts.push('## Form State');
-    for (const f of ctx.forms) {
-      parts.push(`- ${f}`);
-    }
+    parts.push('## Forms');
+    parts.push(ctx.forms.slice(0, 8).join('\n'));
   }
 
   parts.push('');
-  parts.push('## Interactive Elements');
-  parts.push(pageState.treeText);
-
-  if (ctx.visibleText.length > 0) {
-    parts.push('');
-    parts.push('## Visible Text (trimmed)');
-    // Only send first 400 chars to save tokens — interactive elements matter more
-    parts.push(ctx.visibleText.slice(0, 400));
-  }
-
-  parts.push('');
-  parts.push('What is the next action?');
+  parts.push('Next action?');
 
   return parts.join('\n');
 }

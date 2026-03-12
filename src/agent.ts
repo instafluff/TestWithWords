@@ -4,10 +4,49 @@
 import type { Page } from 'playwright-core';
 import type { ToolCall, TestConfig, TestResult, TestStep, TokenUsage } from './types.js';
 import { capturePageState } from './page.js';
-import { getNextToolCall, resetConversation, reportToolResult, getActiveModel } from './llm.js';
+import { getNextToolCall, resetConversation, getActiveModel } from './llm.js';
 import { executeTool } from './executors.js';
 import { isTerminalTool } from './tools.js';
 import type { Reporter } from './reporter.js';
+import type { ActionRecord } from './prompts.js';
+
+/**
+ * Build a compact action target string for the history log.
+ * e.g. click → "[5] 'See Demo'", navigate → "www.example.com", scroll → "down"
+ */
+function formatTarget(toolCall: ToolCall): string {
+  const a = toolCall.args;
+  switch (toolCall.name) {
+    case 'click':
+    case 'hover':
+    case 'check':
+      return `[${a.ref}]`;
+    case 'fill':
+      return `[${a.ref}] "${String(a.text || '').slice(0, 30)}"`;
+    case 'select_option':
+      return `[${a.ref}] "${a.value}"`;
+    case 'navigate':
+      return String(a.url || '').replace(/^https?:\/\//, '').slice(0, 60);
+    case 'scroll':
+      return String(a.direction || 'down');
+    case 'press_key':
+      return String(a.key || '');
+    case 'wait':
+      return `${a.ms}ms`;
+    case 'dismiss_overlay':
+      return a.ref ? `[${a.ref}]` : 'Escape';
+    case 'assert_visible':
+      return `"${String(a.text || '').slice(0, 40)}"`;
+    case 'assert_not_visible':
+      return `!"${String(a.text || '').slice(0, 40)}"`;
+    case 'assert_url':
+      return `url~"${a.pattern}"`;
+    case 'assert_element':
+      return `[${a.ref}] ${a.state}`;
+    default:
+      return JSON.stringify(a).slice(0, 50);
+  }
+}
 
 /**
  * Run a complete test scenario using the observe-act loop.
@@ -22,6 +61,9 @@ export async function runTest(
   
   // Token usage accumulator
   const totalUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  
+  // Action history for stateless LLM calls — compact log of what's been done
+  const actionHistory: ActionRecord[] = [];
   
   // Reset LLM conversation for this test
   resetConversation();
@@ -68,13 +110,13 @@ export async function runTest(
       let toolCall: ToolCall;
       let stepUsage: TokenUsage | null = null;
       try {
-        const llmResult = await getNextToolCall(config.scenario, pageState, step, config.model);
+        const llmResult = await getNextToolCall(config.scenario, pageState, step, config.model, actionHistory);
         toolCall = llmResult.toolCall;
         stepUsage = llmResult.usage;
       } catch (firstErr) {
         // Retry once
         try {
-          const llmResult = await getNextToolCall(config.scenario, pageState, step, config.model);
+          const llmResult = await getNextToolCall(config.scenario, pageState, step, config.model, actionHistory);
           toolCall = llmResult.toolCall;
           stepUsage = llmResult.usage;
         } catch (retryErr) {
@@ -136,18 +178,21 @@ export async function runTest(
         return buildResult(config, steps, result as 'pass' | 'fail', summary, startTime, totalUsage);
       }
 
-      // 4. ACT — execute the tool
+      // 5. ACT — execute the tool
       const description = (toolCall.args.description as string)
         || (toolCall.args.reason as string)
         || toolCall.name;
       reporter.stepAction(step, toolCall.name, description);
       
       const result = await executeTool(toolCall.name, page, toolCall.args, pageState.elements, config.actionTimeout);
-      
-      // Report result to LLM conversation for error recovery
-      if (!result.success && result.error) {
-        reportToolResult('', `Error: ${result.error}`);
-      }
+
+      // Record action in history for future LLM calls (stateless mode)
+      actionHistory.push({
+        tool: toolCall.name,
+        target: formatTarget(toolCall),
+        ok: result.success,
+        error: result.error,
+      });
 
       // Wait for page to settle after action
       await page.waitForTimeout(800);
