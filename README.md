@@ -43,7 +43,7 @@ Run it:
 ```bash
 $ tww run cart.test.tww
 
-  🧪 TestWithWords v0.1.1
+  🧪 TestWithWords v0.1.5
   Chromium (standalone) · LLM: GitHub Models
 
  PASS  cart.test.tww
