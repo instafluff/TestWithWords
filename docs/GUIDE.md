@@ -1,6 +1,6 @@
 # Getting Started Guide
 
-This guide walks you through installing TestWithWords and running your first AI-powered browser test in plain English.
+This guide walks you through installing TestWithWords and running your first AI-powered browser test — described in words.
 
 More examples and walkthroughs at [testwithwords.com](https://testwithwords.com).
 
@@ -118,7 +118,7 @@ describe "Example.com"
     Verify there is a link that says "More information..."
 ```
 
-That's a complete test. Plain English, no code. The `url` tells the AI where to go, and each line under `test` is a step for the AI to perform.
+That's a complete test. Words, not code. The `url` tells the AI where to go, and each line under `test` is a step for the AI to perform.
 
 ---
 

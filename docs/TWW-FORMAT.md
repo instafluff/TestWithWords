@@ -1,6 +1,6 @@
 # .tww File Format
 
-The `.tww` format is how you write tests for TestWithWords. It's a lightweight, indentation-based format inspired by Jest and Mocha — with `describe` blocks, `test` blocks, and lifecycle hooks. The test body is plain English.
+The `.tww` format is how you write tests for TestWithWords. It's a lightweight, indentation-based format inspired by Jest and Mocha — with `describe` blocks, `test` blocks, and lifecycle hooks. The test body is just words — describe what you want to happen.
 
 More examples and patterns at [testwithwords.com](https://testwithwords.com).
 
@@ -93,7 +93,7 @@ describe "Dashboard"
 
 ### test
 
-A single test scenario. Takes a quoted name. The body is plain English — write whatever a human would understand.
+A single test scenario. Takes a quoted name. The body is just words — write whatever a person would understand.
 
 ```tww
 test "can search for products"

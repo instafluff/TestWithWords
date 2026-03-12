@@ -7,7 +7,7 @@ UI Automation and Testing Using Words
 
 **Write tests in words. The AI runs them in the browser.**
 
-TestWithWords is an AI-powered UI automation and testing tool. You describe test scenarios in plain English, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
+TestWithWords is an AI-powered UI automation and testing tool. You describe test scenarios in words, and an AI agent drives a real browser to execute them — clicking, typing, navigating, and verifying results. No selectors. No scripts. No maintenance when the UI changes.
 
 🌐 **[testwithwords.com](https://testwithwords.com)**
 
@@ -96,7 +96,7 @@ Monetization path already in motion:
                         (GitHub / OpenAI / Azure)
 ```
 
-You write plain English. The parser structures it into suites. The AI agent observes the page via accessibility tree, decides the next action, executes it with Playwright, and repeats until every step passes or fails. Screenshots are captured at every step for *your* review, and results land in a beautiful HTML report.
+You write words. The parser structures it into suites. The AI agent observes the page via accessibility tree, decides the next action, executes it with Playwright, and repeats until every step passes or fails. Screenshots are captured at every step for *your* review, and results land in a beautiful HTML report.
 
 ## Instafluff
 
