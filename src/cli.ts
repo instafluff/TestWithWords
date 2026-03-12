@@ -36,7 +36,7 @@ const program = new Command();
 program
   .name('tww')
   .description('TestWithWords — AI-powered UI testing in plain English')
-  .version('0.1.1')
+  .version('0.1.2')
   .addHelpText('after', `
 
 Start here:

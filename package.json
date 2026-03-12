@@ -1,6 +1,6 @@
 {
   "name": "testwithwords",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI-powered UI testing — describe the test in plain English, the AI does the rest",
   "type": "module",
   "bin": {
